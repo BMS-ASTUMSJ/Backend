@@ -3,7 +3,6 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
 const User = require("../models/User");
-const Applicant = require("../models/Applicant");
 const { sendEmail } = require("../services/emailService");
 
 const login = async (req, res) => {
@@ -201,8 +200,7 @@ const forgotPassword = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message:
-          "User with this email does not exist.",
+        message: "User with this email does not exist.",
       });
     }
 
@@ -338,7 +336,6 @@ const resetPassword = async (req, res) => {
   }
 };
 
-
 module.exports = {
   login,
   getMe,
@@ -346,5 +343,4 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
-  
 };

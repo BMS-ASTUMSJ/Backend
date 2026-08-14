@@ -1,6 +1,7 @@
-require("dotenv").config();
 const dns = require("dns");
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
@@ -8,8 +9,6 @@ const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
-const applicantRoutes= require("./routes/applicantRoutes")
-const announcementRoutes = require("./routes/announcementRoutes");
 
 const app = express();
 
@@ -20,10 +19,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 connectDB();
-
-app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/applicant",applicantRoutes);
+app.use("/api/applicant", applicantRoutes);
 app.use("/api/announcements", announcementRoutes);
 
 app.get("/", (req, res) => {
