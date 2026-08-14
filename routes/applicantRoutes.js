@@ -10,15 +10,8 @@ const authorize = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-
 router.post("/register", registerApplicant);
 
-
-router.patch(
-  "/:id/status",
-  protect,
-  authorize("admin"),
-  updateApplicantStatus
-);
+router.patch("/:id/status", protect, authorize("admin"), updateApplicantStatus);
 
 module.exports = router;

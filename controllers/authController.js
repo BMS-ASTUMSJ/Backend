@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
 const User = require("../models/User");
+const Applicant = require("../models/Applicant");
 const { sendEmail } = require("../services/emailService");
 
 const login = async (req, res) => {

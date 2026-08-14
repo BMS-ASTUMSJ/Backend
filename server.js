@@ -9,7 +9,8 @@ const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
-
+const applicantRoutes = require("./routes/applicantRoutes");
+const announcementRoutes = require("./routes/announcementRoutes");
 const app = express();
 
 app.use(cors());
@@ -19,6 +20,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 connectDB();
+app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/applicant", applicantRoutes);
 app.use("/api/announcements", announcementRoutes);
