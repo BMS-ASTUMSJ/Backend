@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
 const User = require("../models/User");
+const Applicant = require("../models/Applicant");
 const { sendEmail } = require("../services/emailService");
 
 const login = async (req, res) => {
@@ -198,10 +199,10 @@ const forgotPassword = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(200).json({
-        success: true,
+      return res.status(404).json({
+        success: false,
         message:
-          "If an account with that email exists, a password reset email has been sent.",
+          "User with this email does not exist.",
       });
     }
 
@@ -337,6 +338,80 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const registerApplicant = async (req, res) => {
+  try {
+    const {
+      fullName,
+      email,
+      phone,
+      gender,
+      year,
+      department,
+      experienceLevel,
+      about,
+      agreedToRules,
+    } = req.body;
+
+    if (
+      !fullName ||
+      !email ||
+      !phone ||
+      !gender ||
+      !year ||
+      !department ||
+      !experienceLevel ||
+      !about
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please fill in all required fields",
+      });
+ }
+
+    if (!agreedToRules) {
+      return res.status(400).json({
+        success: false,
+        message: "You must agree to the bootcamp rules",
+      });
+    }
+
+    const existingApplicant = await Applicant.findOne({
+      email: email.toLowerCase(),
+    });
+
+    if (existingApplicant) {
+      return res.status(409).json({
+        success: false,
+        message: "This email is already registered",
+      });
+    }
+
+    const applicant = await Applicant.create({
+      fullName,
+      email: email.toLowerCase(),
+      phone,
+      gender,
+      year,
+      department,
+      experienceLevel,
+      about,
+      agreedToRules,
+    });
+  return res.status(201).json({
+      success: true,
+      message:
+        "Registration successful. Your application is pending interview.",
+      applicant,
+    });
+  } catch (error) {
+    console.error("Registration error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error during registration",
+    });
+  }
+};
 module.exports = {
   login,
   getMe,
@@ -344,4 +419,5 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  registerApplicant
 };
