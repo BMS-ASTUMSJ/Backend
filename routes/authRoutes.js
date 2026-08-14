@@ -7,10 +7,10 @@ const {
   logout,
   forgotPassword,
   resetPassword,
-  registerApplicant
 } = require("../controllers/authController");
 
 const protect = require("../middleware/authMiddleware");
+
 
 const router = express.Router();
 
@@ -22,10 +22,9 @@ router.post("/reset-password/:token", resetPassword);
 
 router.get("/me", protect, getMe);
 
-router.post("/change-password", protect, changePassword);
+
+
 
 router.post("/logout", protect, logout);
-
-router.post("/register", registerApplicant);
 
 module.exports = router;

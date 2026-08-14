@@ -1,37 +1,44 @@
 const express = require("express");
 
 const {
-  createUser,
-  updateUserStatus,
-  getBlacklistedStudents,
-} = require("../controllers/userController");
+  createAnnouncement,
+  getAnnouncements,
+  deleteAnnouncement,
+  updateAnnouncement,
+} = require("../controllers/announcementController");
 
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
-
 
 const router = express.Router();
 
 
 router.post(
-  "/createuser",
+  "/",
   protect,
   authorize("admin"),
-  createUser
-);
-
-router.patch(
-  "/:id/status",
-  protect,
-  authorize("admin"),
-  updateUserStatus
+  createAnnouncement
 );
 
 router.get(
-  "/blacklisted",
+  "/",
+  protect,
+  getAnnouncements
+);
+
+router.delete(
+  "/:id",
   protect,
   authorize("admin"),
-  getBlacklistedStudents
+  deleteAnnouncement
+);
+
+
+router.patch(
+  "/:id",
+  protect,
+  authorize("admin"),
+  updateAnnouncement
 );
 
 module.exports = router;
