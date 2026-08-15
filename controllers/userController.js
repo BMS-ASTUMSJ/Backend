@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const crypto = require("crypto");
-
+const { sendEmail } = require("../services/emailService");
 
 const createUser = async (req, res) => {
   try {
@@ -10,8 +10,7 @@ const createUser = async (req, res) => {
     if (!firstName || !lastName || !email || !role) {
       return res.status(400).json({
         success: false,
-        message:
-          "First name, last name, email, role, are required",
+        message: "First name, last name, email, role are required",
       });
     }
 
@@ -22,8 +21,10 @@ const createUser = async (req, res) => {
       });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     const existingUser = await User.findOne({
-      email: email.toLowerCase(),
+      email: normalizedEmail,
     });
 
     if (existingUser) {
@@ -33,41 +34,130 @@ const createUser = async (req, res) => {
       });
     }
 
-     const temporaryPassword = crypto.randomBytes(6).toString("hex");
-     
+    // Generate temporary password
+    const temporaryPassword = crypto.randomBytes(6).toString("hex");
+
+    // Hash password before saving
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
- 
+
+    // Create user
     const user = await User.create({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: normalizedEmail,
       password: hashedPassword,
       status: "approved",
       role,
       mustChangePassword: true,
     });
 
-    res.status(201).json({
+    // Send temporary password by email
+    try {
+      await sendEmail({
+        to: normalizedEmail,
+        subject: "Your ASTU MSJ Bootcamp Account",
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+            <h2>Welcome to ASTU MSJ Bootcamp</h2>
+
+            <p>Hello ${firstName},</p>
+
+            <p>
+              An account has been created for you as a
+              <strong>${role}</strong>.
+            </p>
+
+            <p>Your login credentials are:</p>
+
+            <p>
+              <strong>Email:</strong> ${normalizedEmail}<br>
+              <strong>Temporary Password:</strong> ${temporaryPassword}
+            </p>
+
+            <p>
+              Please use these credentials to log in.
+              You will be required to change your password after logging in.
+            </p>
+
+            <p>
+              For security reasons, please do not share your password with anyone.
+            </p>
+
+            <p>
+              Regards,<br>
+              ASTU MSJ Bootcamp Team
+            </p>
+          </div>
+        `,
+      });
+    } catch (emailError) {
+      console.error("Email sending failed:", emailError);
+
+      // Delete the account if the email could not be sent
+      await User.findByIdAndDelete(user._id);
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "User account could not be created because the email could not be sent",
+      });
+    }
+
+    return res.status(201).json({
       success: true,
-      message: `${role} account created successfully`,
+      message: `${role} account created successfully. Login credentials were sent to the user's email.`,
       user: {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
         role: user.role,
-     
         status: user.status,
         mustChangePassword: user.mustChangePassword,
       },
-      temporaryPassword,
     });
   } catch (error) {
     console.error("Create user error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Server error",
+    });
+  }
+};
+
+const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.role === "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin accounts cannot be deleted",
+      });
+    }
+
+    await User.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete user error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while deleting user",
     });
   }
 };
@@ -93,7 +183,6 @@ const updateUserStatus = async (req, res) => {
       });
     }
 
-  
     if (user.role === "admin") {
       return res.status(403).json({
         success: false,
@@ -132,9 +221,7 @@ const getBlacklistedUsers = async (req, res) => {
     const users = await User.find({
       role: { $in: ["student", "mentor"] },
       status: "suspended",
-    }).select(
-      "firstName lastName email role status createdAt updatedAt"
-    );
+    }).select("firstName lastName email role status createdAt updatedAt");
 
     return res.status(200).json({
       success: true,
@@ -178,7 +265,6 @@ const assignMentor = async (req, res) => {
       });
     }
 
-
     const mentor = await User.findById(mentorId);
 
     if (!mentor) {
@@ -195,7 +281,6 @@ const assignMentor = async (req, res) => {
       });
     }
 
-
     if (mentor.status !== "approved") {
       return res.status(400).json({
         success: false,
@@ -203,7 +288,6 @@ const assignMentor = async (req, res) => {
       });
     }
 
-    
     student.assignedMentor = mentor._id;
 
     await student.save();
@@ -240,11 +324,10 @@ const getStudents = async (req, res) => {
     const students = await User.find({
       role: "student",
     })
-      .select("firstName lastName email role status mustChangePassword assignedMentor")
-      .populate(
-        "assignedMentor",
-        "firstName lastName email role status"
-      );
+      .select(
+        "firstName lastName email role status mustChangePassword assignedMentor",
+      )
+      .populate("assignedMentor", "firstName lastName email role status");
 
     return res.status(200).json({
       success: true,
@@ -265,9 +348,7 @@ const getMentors = async (req, res) => {
   try {
     const mentors = await User.find({
       role: "mentor",
-    }).select(
-      "firstName lastName email role status createdAt updatedAt"
-    );
+    }).select("firstName lastName email role status createdAt updatedAt");
 
     return res.status(200).json({
       success: true,
@@ -284,17 +365,13 @@ const getMentors = async (req, res) => {
   }
 };
 
-
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .select(
-        "firstName lastName email role status phone bio profileImage mustChangePassword assignedMentor createdAt updatedAt"
+        "firstName lastName email role status phone bio profileImage mustChangePassword assignedMentor createdAt updatedAt",
       )
-      .populate(
-        "assignedMentor",
-        "firstName lastName email role status"
-      );
+      .populate("assignedMentor", "firstName lastName email role status");
 
     if (!user) {
       return res.status(404).json({
@@ -375,6 +452,7 @@ const updateProfile = async (req, res) => {
 module.exports = {
   createUser,
   updateUserStatus,
+  deleteUser,
   getBlacklistedUsers,
   assignMentor,
   getStudents,

@@ -1,13 +1,16 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-
 const { OAuth2Client } = require("google-auth-library");
+
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const User = require("../models/User");
-
 const { sendEmail } = require("../services/emailService");
+
+// ======================================================
+// LOGIN
+// ======================================================
 
 const login = async (req, res) => {
   try {
@@ -38,7 +41,10 @@ const login = async (req, res) => {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password);
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.password,
+    );
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -47,21 +53,40 @@ const login = async (req, res) => {
       });
     }
 
-    const token = jwt.sign(
+    const accessToken = jwt.sign(
       {
         userId: user._id,
         role: user.role,
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "1d",
+        expiresIn: "15m",
       },
     );
+
+    const refreshToken = jwt.sign(
+      {
+        userId: user._id,
+      },
+      process.env.JWT_REFRESH_SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite:
+        process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      token,
+      accessToken,
+
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -80,6 +105,71 @@ const login = async (req, res) => {
     });
   }
 };
+
+// ======================================================
+// REFRESH ACCESS TOKEN
+// ======================================================
+
+const refreshAccessToken = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token is required",
+      });
+    }
+
+    const decoded = jwt.verify(
+      refreshToken,
+      process.env.JWT_REFRESH_SECRET,
+    );
+
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.status !== "approved") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is suspended",
+      });
+    }
+
+    const newAccessToken = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "15m",
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      accessToken: newAccessToken,
+    });
+  } catch (error) {
+    console.error("Refresh token error:", error);
+
+    return res.status(401).json({
+      success: false,
+      message: "Refresh token is invalid or expired",
+    });
+  }
+};
+
+// ======================================================
+// GET CURRENT USER
+// ======================================================
 
 const getMe = async (req, res) => {
   try {
@@ -104,6 +194,10 @@ const getMe = async (req, res) => {
   }
 };
 
+// ======================================================
+// CHANGE PASSWORD
+// ======================================================
+
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -111,7 +205,8 @@ const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Current password and new password are required",
+        message:
+          "Current password and new password are required",
       });
     }
 
@@ -122,7 +217,9 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const user = await User.findById(req.user._id).select("+password");
+    const user = await User.findById(req.user._id).select(
+      "+password",
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -131,7 +228,10 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+    const passwordMatch = await bcrypt.compare(
+      currentPassword,
+      user.password,
+    );
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -140,12 +240,16 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const samePassword = await bcrypt.compare(newPassword, user.password);
+    const samePassword = await bcrypt.compare(
+      newPassword,
+      user.password,
+    );
 
     if (samePassword) {
       return res.status(400).json({
         success: false,
-        message: "New password must be different from current password",
+        message:
+          "New password must be different from current password",
       });
     }
 
@@ -168,8 +272,19 @@ const changePassword = async (req, res) => {
   }
 };
 
+// ======================================================
+// LOGOUT
+// ======================================================
+
 const logout = async (req, res) => {
   try {
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite:
+        process.env.NODE_ENV === "production" ? "none" : "lax",
+    });
+
     return res.status(200).json({
       success: true,
       message: "Logged out successfully",
@@ -183,6 +298,10 @@ const logout = async (req, res) => {
     });
   }
 };
+
+// ======================================================
+// FORGOT PASSWORD - SEND OTP
+// ======================================================
 
 const forgotPassword = async (req, res) => {
   try {
@@ -204,27 +323,32 @@ const forgotPassword = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message:
-          "User with this email does not exist.",
+        message: "User with this email does not exist.",
       });
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
+    const otp = crypto
+      .randomInt(100000, 1000000)
+      .toString();
 
-    const hashedToken = crypto
+    const hashedOtp = crypto
       .createHash("sha256")
-      .update(resetToken)
+      .update(otp)
       .digest("hex");
 
-    user.passwordResetToken = hashedToken;
-    user.passwordResetExpires = Date.now() + 15 * 60 * 1000;
+    user.passwordResetOtp = hashedOtp;
+
+    user.passwordResetOtpExpires =
+      Date.now() + 10 * 60 * 1000;
+
+    user.passwordResetVerified = false;
 
     await user.save();
 
     await sendEmail({
       to: user.email,
 
-      subject: "ASTU MSJ Password Reset",
+      subject: "ASTU MSJ Password Reset OTP",
 
       html: `
         <h2>Password Reset Request</h2>
@@ -237,15 +361,19 @@ const forgotPassword = async (req, res) => {
         </p>
 
         <p>
-          Your password reset token is:
+          Your password reset OTP is:
+        </p>
+
+        <p style="
+          font-size: 28px;
+          font-weight: bold;
+          letter-spacing: 5px;
+        ">
+          ${otp}
         </p>
 
         <p>
-          <strong>${resetToken}</strong>
-        </p>
-
-        <p>
-          This token will expire in 15 minutes.
+          This OTP will expire in 10 minutes.
         </p>
 
         <p>
@@ -262,9 +390,7 @@ const forgotPassword = async (req, res) => {
     return res.status(200).json({
       success: true,
       message:
-        "If an account with that email exists, a password reset email has been sent.",
-
-      resetToken,
+        "Password reset OTP has been sent to your email.",
     });
   } catch (error) {
     console.error("Forgot password error:", error);
@@ -276,22 +402,93 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-const resetPassword = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { newPassword } = req.body;
+// ======================================================
+// VERIFY RESET OTP
+// ======================================================
 
-    if (!token) {
+const verifyResetOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    console.log("VERIFY OTP REQUEST");
+    console.log("Email:", email);
+    console.log("OTP:", otp);
+
+    if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        message: "Reset token is required",
+        message: "Email and OTP are required",
       });
     }
 
-    if (!newPassword) {
+    if (!/^\d{6}$/.test(otp)) {
       return res.status(400).json({
         success: false,
-        message: "New password is required",
+        message: "OTP must be a 6-digit number",
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const hashedOtp = crypto
+      .createHash("sha256")
+      .update(otp)
+      .digest("hex");
+
+    console.log("Hashed OTP:", hashedOtp);
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+      passwordResetOtp: hashedOtp,
+      passwordResetOtpExpires: {
+        $gt: Date.now(),
+      },
+    });
+
+    if (!user) {
+      console.log("OTP verification failed");
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired OTP",
+      });
+    }
+
+    user.passwordResetVerified = true;
+
+    user.passwordResetOtp = null;
+    user.passwordResetOtpExpires = null;
+
+    await user.save();
+
+    console.log("OTP verification successful");
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified successfully",
+    });
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// ======================================================
+// RESET PASSWORD
+// ======================================================
+
+const resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and new password are required",
       });
     }
 
@@ -302,26 +499,39 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const normalizedEmail = email.toLowerCase().trim();
 
     const user = await User.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpires: {
-        $gt: Date.now(),
-      },
+      email: normalizedEmail,
+      passwordResetVerified: true,
     }).select("+password");
 
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: "Reset token is invalid or has expired",
+        message:
+          "OTP verification is required before resetting your password",
+      });
+    }
+
+    const samePassword = await bcrypt.compare(
+      newPassword,
+      user.password,
+    );
+
+    if (samePassword) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "New password must be different from your current password",
       });
     }
 
     user.password = await bcrypt.hash(newPassword, 12);
 
-    user.passwordResetToken = null;
-    user.passwordResetExpires = null;
+    user.passwordResetVerified = false;
+    user.passwordResetOtp = null;
+    user.passwordResetOtpExpires = null;
 
     user.mustChangePassword = false;
 
@@ -341,6 +551,10 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// ======================================================
+// GOOGLE LOGIN
+// ======================================================
+
 const googleLogin = async (req, res) => {
   try {
     const { credential } = req.body;
@@ -352,7 +566,6 @@ const googleLogin = async (req, res) => {
       });
     }
 
-
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -362,8 +575,6 @@ const googleLogin = async (req, res) => {
 
     const {
       email,
-      given_name,
-      family_name,
       sub: googleId,
     } = payload;
 
@@ -375,7 +586,6 @@ const googleLogin = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-
 
     const user = await User.findOne({
       email: normalizedEmail,
@@ -396,14 +606,12 @@ const googleLogin = async (req, res) => {
       });
     }
 
-
     if (!user.googleId) {
       user.googleId = googleId;
       await user.save();
     }
 
-   
-    const token = jwt.sign(
+    const accessToken = jwt.sign(
       {
         userId: user._id,
         role: user.role,
@@ -411,13 +619,14 @@ const googleLogin = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "1d",
-      }
+      },
     );
 
     return res.status(200).json({
       success: true,
       message: "Google login successful",
-      token,
+      accessToken,
+
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -436,14 +645,16 @@ const googleLogin = async (req, res) => {
     });
   }
 };
+
+
 module.exports = {
   login,
-  googleLogin,
+  refreshAccessToken,
   getMe,
   changePassword,
   logout,
   forgotPassword,
+  verifyResetOtp,
   resetPassword,
-  googleLogin
-  
+  googleLogin,
 };

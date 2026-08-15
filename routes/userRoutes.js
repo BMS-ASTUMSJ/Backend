@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   createUser,
+  deleteUser,
   updateUserStatus,
   getBlacklistedUsers,
   assignMentor,
@@ -14,37 +15,17 @@ const {
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
-
 const router = express.Router();
 
 
 router.post(
-  "/createuser",
+  "/",
   protect,
   authorize("admin"),
   createUser
 );
+router.delete("/:id", deleteUser);
 
-router.patch(
-  "/:id/status",
-  protect,
-  authorize("admin"),
-  updateUserStatus
-);
-
-router.get(
-  "/blacklisted",
-  protect,
-  authorize("admin"),
-  getBlacklistedUsers
-);
-
-router.get(
-  "/students",
-  protect,
-  authorize("admin"),
-  getStudents
-);
 
 router.get(
   "/mentors",
@@ -53,6 +34,15 @@ router.get(
   getMentors
 );
 
+// Get all students
+router.get(
+  "/students",
+  protect,
+  authorize("admin"),
+  getStudents
+);
+
+// Assign a mentor to a student
 router.patch(
   "/assign-mentor",
   protect,
@@ -60,13 +50,32 @@ router.patch(
   assignMentor
 );
 
+// Suspend / approve user
+router.patch(
+  "/:id/status",
+  protect,
+  authorize("admin"),
+  updateUserStatus
+);
+
+// Get blacklisted users
+router.get(
+  "/blacklist",
+  protect,
+  authorize("admin"),
+  getBlacklistedUsers
+);
+
+
+
 router.get(
   "/profile",
   protect,
   getProfile
 );
 
-router.patch(
+
+router.put(
   "/profile",
   protect,
   updateProfile

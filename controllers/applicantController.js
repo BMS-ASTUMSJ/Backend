@@ -80,6 +80,26 @@ const registerApplicant = async (req, res) => {
   }
 };
 
+const getApplicants = async (req, res) => {
+  try {
+    const applicants = await Applicant.find()
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: applicants.length,
+      applicants,
+    });
+  } catch (error) {
+    console.error("Get applicants error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while getting applicants",
+    });
+  }
+};
+
 const updateApplicantStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -205,8 +225,8 @@ const updateApplicantStatus = async (req, res) => {
   }
 };
 
-
 module.exports = {
   registerApplicant,
   updateApplicantStatus,
+  getApplicants,
 };

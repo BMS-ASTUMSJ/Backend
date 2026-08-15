@@ -3,6 +3,7 @@ const express = require("express");
 const {
   registerApplicant,
   updateApplicantStatus,
+  getApplicants,
 } = require("../controllers/applicantController");
 
 const protect = require("../middleware/authMiddleware");
@@ -12,6 +13,14 @@ const router = express.Router();
 
 
 router.post("/register", registerApplicant);
+
+
+router.get(
+  "/",
+  protect,
+  authorize("admin"),
+  getApplicants
+);
 
 
 router.patch(

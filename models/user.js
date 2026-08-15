@@ -13,28 +13,24 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    phone:{
-      type:String,
-      required: true,
+
+    phone: {
+      type: String,
+      default: "",
       trim: true,
     },
-    phone: {
-  type: String,
-  default: "",
-  trim: true,
-},
 
-bio: {
-  type: String,
-  default: "",
-  trim: true,
-  maxlength: 300,
-},
+    bio: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 300,
+    },
 
-profileImage: {
-  type: String,
-  default: null,
-},
+    profileImage: {
+      type: String,
+      default: null,
+    },
 
     email: {
       type: String,
@@ -43,6 +39,7 @@ profileImage: {
       lowercase: true,
       trim: true,
     },
+
     googleId: {
       type: String,
       default: null,
@@ -59,11 +56,13 @@ profileImage: {
       enum: ["admin", "mentor", "student"],
       required: true,
     },
+
     assignedMentor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
     },
+
     status: {
       type: String,
       enum: ["approved", "suspended"],
@@ -75,14 +74,19 @@ profileImage: {
       default: true,
     },
 
-    passwordResetToken: {
+    passwordResetOtp: {
       type: String,
       default: null,
     },
 
-    passwordResetExpires: {
+    passwordResetOtpExpires: {
       type: Date,
       default: null,
+    },
+
+    passwordResetVerified: {
+      type: Boolean,
+      default: false,
     },
   },
   {
