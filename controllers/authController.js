@@ -1,10 +1,12 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const { OAuth2Client } = require("google-auth-library");
 
 const User = require("../models/User");
-const Applicant = require("../models/Applicant");
 const { sendEmail } = require("../services/emailService");
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const login = async (req, res) => {
   try {
@@ -69,15 +71,13 @@ const login = async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-
       accessToken,
-
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -97,9 +97,123 @@ const login = async (req, res) => {
   }
 };
 
+const googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      return res.status(400).json({
+        success: false,
+        message: "Google credential is required",
+      });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+
+    const { email, given_name, family_name, sub: googleId } = payload;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Google account email not available",
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "No account exists with this Google email. Please contact the administrator.",
+      });
+    }
+
+    if (user.status !== "approved") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is suspended",
+      });
+    }
+
+    if (!user.googleId) {
+      user.googleId = googleId;
+
+      if (!user.firstName && given_name) {
+        user.firstName = given_name;
+      }
+
+      if (!user.lastName && family_name) {
+        user.lastName = family_name;
+      }
+
+      await user.save();
+    }
+
+    const accessToken = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "15m",
+      },
+    );
+
+    const refreshToken = jwt.sign(
+      {
+        userId: user._id,
+      },
+      process.env.JWT_REFRESH_SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Google login successful",
+
+      accessToken,
+
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        mustChangePassword: user.mustChangePassword,
+      },
+    });
+  } catch (error) {
+    console.error("Google login error:", error);
+
+    return res.status(401).json({
+      success: false,
+      message: "Invalid Google credential",
+    });
+  }
+};
+
 const refreshAccessToken = async (req, res) => {
   try {
-    // Get refresh token from HTTP-only cookie
     const refreshToken = req.cookies.refreshToken;
 
     if (!refreshToken) {
@@ -221,6 +335,7 @@ const changePassword = async (req, res) => {
     }
 
     user.password = await bcrypt.hash(newPassword, 12);
+
     user.mustChangePassword = false;
 
     await user.save();
@@ -400,6 +515,7 @@ const resetPassword = async (req, res) => {
     user.password = await bcrypt.hash(newPassword, 12);
 
     user.passwordResetOtp = null;
+
     user.passwordResetOtpExpires = null;
 
     user.mustChangePassword = false;
@@ -422,6 +538,7 @@ const resetPassword = async (req, res) => {
 
 module.exports = {
   login,
+  googleLogin,
   refreshAccessToken,
   getMe,
   changePassword,
