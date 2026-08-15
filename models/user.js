@@ -13,6 +13,28 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    phone:{
+      type:String,
+      required: true,
+      trim: true,
+    },
+    phone: {
+  type: String,
+  default: "",
+  trim: true,
+},
+
+bio: {
+  type: String,
+  default: "",
+  trim: true,
+  maxlength: 300,
+},
+
+profileImage: {
+  type: String,
+  default: null,
+},
 
     email: {
       type: String,
@@ -22,9 +44,9 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
     googleId: {
-  type: String,
-  default: null,
-},
+      type: String,
+      default: null,
+    },
 
     password: {
       type: String,
@@ -37,7 +59,11 @@ const userSchema = new mongoose.Schema(
       enum: ["admin", "mentor", "student"],
       required: true,
     },
-
+    assignedMentor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     status: {
       type: String,
       enum: ["approved", "suspended"],

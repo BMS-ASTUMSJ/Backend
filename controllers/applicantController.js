@@ -101,7 +101,6 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    // Rejected applicants do not get an account
     if (status === "rejected") {
       applicant.status = "rejected";
       await applicant.save();
@@ -113,7 +112,6 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    // Check if a user account already exists
     const existingUser = await User.findOne({
       email: applicant.email,
     });
@@ -125,19 +123,19 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    // Split full name into first and last name
+   
     const nameParts = applicant.fullName.trim().split(/\s+/);
 
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(" ") || firstName;
 
-    // Generate a temporary password
+  
     const temporaryPassword = crypto.randomBytes(6).toString("base64url");
 
-    // Hash the temporary password before saving it
+
     const hashedPassword = await bcrypt.hash(temporaryPassword, 12);
 
-    // Create the student account
+  
     const student = await User.create({
       firstName,
       lastName,
@@ -148,11 +146,10 @@ const updateApplicantStatus = async (req, res) => {
       mustChangePassword: true,
     });
 
-    // Mark applicant as passed
+  
     applicant.status = "passed";
     await applicant.save();
 
-    // Send temporary login credentials
     await sendEmail({
       to: applicant.email,
       subject: "ASTU MSJ Bootcamp - Student Account",
@@ -207,6 +204,7 @@ const updateApplicantStatus = async (req, res) => {
     });
   }
 };
+
 
 module.exports = {
   registerApplicant,
