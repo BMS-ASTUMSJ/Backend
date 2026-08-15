@@ -69,13 +69,12 @@ const login = async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-
       accessToken,
 
       user: {
@@ -99,7 +98,6 @@ const login = async (req, res) => {
 
 const refreshAccessToken = async (req, res) => {
   try {
-    // Get refresh token from HTTP-only cookie
     const refreshToken = req.cookies.refreshToken;
 
     if (!refreshToken) {
@@ -293,6 +291,8 @@ const forgotPassword = async (req, res) => {
 
     user.passwordResetOtpExpires = Date.now() + 10 * 60 * 1000;
 
+    user.passwordResetVerified = false;
+
     await user.save();
 
     await sendEmail({
@@ -351,14 +351,14 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-const resetPassword = async (req, res) => {
+const verifyResetOtp = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, otp } = req.body;
 
-    if (!email || !otp || !newPassword) {
+    if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        message: "Email, OTP and new password are required",
+        message: "Email and OTP are required",
       });
     }
 
@@ -366,13 +366,6 @@ const resetPassword = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "OTP must be a 6-digit number",
-      });
-    }
-
-    if (newPassword.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: "New password must be at least 8 characters",
       });
     }
 
@@ -388,7 +381,7 @@ const resetPassword = async (req, res) => {
       passwordResetOtpExpires: {
         $gt: Date.now(),
       },
-    }).select("+password");
+    });
 
     if (!user) {
       return res.status(400).json({
@@ -397,8 +390,71 @@ const resetPassword = async (req, res) => {
       });
     }
 
+    user.passwordResetVerified = true;
+
+    user.passwordResetOtp = null;
+    user.passwordResetOtpExpires = null;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified successfully",
+    });
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and new password are required",
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 8 characters",
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+      passwordResetVerified: true,
+    }).select("+password");
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP verification is required before resetting your password",
+      });
+    }
+
+    const samePassword = await bcrypt.compare(newPassword, user.password);
+
+    if (samePassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different from your current password",
+      });
+    }
+
     user.password = await bcrypt.hash(newPassword, 12);
 
+    user.passwordResetVerified = false;
     user.passwordResetOtp = null;
     user.passwordResetOtpExpires = null;
 
@@ -427,5 +483,6 @@ module.exports = {
   changePassword,
   logout,
   forgotPassword,
+  verifyResetOtp,
   resetPassword,
 };
