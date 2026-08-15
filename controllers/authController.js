@@ -1,16 +1,13 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { OAuth2Client } = require("google-auth-library");
 
+const { OAuth2Client } = require("google-auth-library");
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const User = require("../models/User");
-const { sendEmail } = require("../services/emailService");
 
-// ======================================================
-// LOGIN
-// ======================================================
+const { sendEmail } = require("../services/emailService");
 
 const login = async (req, res) => {
   try {
@@ -41,10 +38,7 @@ const login = async (req, res) => {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(
-      password,
-      user.password,
-    );
+    const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -77,8 +71,7 @@ const login = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite:
-        process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -106,10 +99,6 @@ const login = async (req, res) => {
   }
 };
 
-// ======================================================
-// REFRESH ACCESS TOKEN
-// ======================================================
-
 const refreshAccessToken = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;
@@ -121,10 +110,7 @@ const refreshAccessToken = async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(
-      refreshToken,
-      process.env.JWT_REFRESH_SECRET,
-    );
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
     const user = await User.findById(decoded.userId);
 
@@ -167,10 +153,6 @@ const refreshAccessToken = async (req, res) => {
   }
 };
 
-// ======================================================
-// GET CURRENT USER
-// ======================================================
-
 const getMe = async (req, res) => {
   try {
     return res.status(200).json({
@@ -194,10 +176,6 @@ const getMe = async (req, res) => {
   }
 };
 
-// ======================================================
-// CHANGE PASSWORD
-// ======================================================
-
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -205,8 +183,7 @@ const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        message:
-          "Current password and new password are required",
+        message: "Current password and new password are required",
       });
     }
 
@@ -217,9 +194,7 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const user = await User.findById(req.user._id).select(
-      "+password",
-    );
+    const user = await User.findById(req.user._id).select("+password");
 
     if (!user) {
       return res.status(404).json({
@@ -228,10 +203,7 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(
-      currentPassword,
-      user.password,
-    );
+    const passwordMatch = await bcrypt.compare(currentPassword, user.password);
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -240,16 +212,12 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const samePassword = await bcrypt.compare(
-      newPassword,
-      user.password,
-    );
+    const samePassword = await bcrypt.compare(newPassword, user.password);
 
     if (samePassword) {
       return res.status(400).json({
         success: false,
-        message:
-          "New password must be different from current password",
+        message: "New password must be different from current password",
       });
     }
 
@@ -272,17 +240,12 @@ const changePassword = async (req, res) => {
   }
 };
 
-// ======================================================
-// LOGOUT
-// ======================================================
-
 const logout = async (req, res) => {
   try {
     res.clearCookie("refreshToken", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite:
-        process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     });
 
     return res.status(200).json({
@@ -298,10 +261,6 @@ const logout = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// FORGOT PASSWORD - SEND OTP
-// ======================================================
 
 const forgotPassword = async (req, res) => {
   try {
@@ -327,19 +286,13 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    const otp = crypto
-      .randomInt(100000, 1000000)
-      .toString();
+    const otp = crypto.randomInt(100000, 1000000).toString();
 
-    const hashedOtp = crypto
-      .createHash("sha256")
-      .update(otp)
-      .digest("hex");
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
     user.passwordResetOtp = hashedOtp;
 
-    user.passwordResetOtpExpires =
-      Date.now() + 10 * 60 * 1000;
+    user.passwordResetOtpExpires = Date.now() + 10 * 60 * 1000;
 
     user.passwordResetVerified = false;
 
@@ -389,8 +342,7 @@ const forgotPassword = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "Password reset OTP has been sent to your email.",
+      message: "Password reset OTP has been sent to your email.",
     });
   } catch (error) {
     console.error("Forgot password error:", error);
@@ -402,17 +354,9 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// ======================================================
-// VERIFY RESET OTP
-// ======================================================
-
 const verifyResetOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
-
-    console.log("VERIFY OTP REQUEST");
-    console.log("Email:", email);
-    console.log("OTP:", otp);
 
     if (!email || !otp) {
       return res.status(400).json({
@@ -430,24 +374,19 @@ const verifyResetOtp = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    const hashedOtp = crypto
-      .createHash("sha256")
-      .update(otp)
-      .digest("hex");
-
-    console.log("Hashed OTP:", hashedOtp);
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
     const user = await User.findOne({
       email: normalizedEmail,
+
       passwordResetOtp: hashedOtp,
+
       passwordResetOtpExpires: {
         $gt: Date.now(),
       },
     });
 
     if (!user) {
-      console.log("OTP verification failed");
-
       return res.status(400).json({
         success: false,
         message: "Invalid or expired OTP",
@@ -460,8 +399,6 @@ const verifyResetOtp = async (req, res) => {
     user.passwordResetOtpExpires = null;
 
     await user.save();
-
-    console.log("OTP verification successful");
 
     return res.status(200).json({
       success: true,
@@ -476,10 +413,6 @@ const verifyResetOtp = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// RESET PASSWORD
-// ======================================================
 
 const resetPassword = async (req, res) => {
   try {
@@ -509,21 +442,16 @@ const resetPassword = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message:
-          "OTP verification is required before resetting your password",
+        message: "OTP verification is required before resetting your password",
       });
     }
 
-    const samePassword = await bcrypt.compare(
-      newPassword,
-      user.password,
-    );
+    const samePassword = await bcrypt.compare(newPassword, user.password);
 
     if (samePassword) {
       return res.status(400).json({
         success: false,
-        message:
-          "New password must be different from your current password",
+        message: "New password must be different from your current password",
       });
     }
 
@@ -551,9 +479,6 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// ======================================================
-// GOOGLE LOGIN
-// ======================================================
 
 const googleLogin = async (req, res) => {
   try {
@@ -619,14 +544,13 @@ const googleLogin = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "1d",
-      },
+      }
     );
 
     return res.status(200).json({
       success: true,
       message: "Google login successful",
       accessToken,
-
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -645,7 +569,6 @@ const googleLogin = async (req, res) => {
     });
   }
 };
-
 
 module.exports = {
   login,

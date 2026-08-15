@@ -17,15 +17,19 @@ const protect = require("../middleware/authMiddleware");
 const router = express.Router();
 
 router.post("/login", login);
+
 router.post("/google", googleLogin);
 router.post("/forgot-password", forgotPassword);
 router.post("/verify-reset-otp", verifyResetOtp);
 router.post("/reset-password", resetPassword);
 
 
+router.post("/reset-password", resetPassword);
+
 router.get("/me", protect, getMe);
 
-router.put("/change-password", protect, changePassword);
+router.patch("/change-password", protect, changePassword);
+
 
 router.post("/logout", protect, logout);
 

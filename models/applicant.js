@@ -65,7 +65,7 @@ const applicantSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 module.exports = mongoose.model("Applicant", applicantSchema);
