@@ -1,4 +1,9 @@
 const Applicant = require("../models/Applicant");
+const User = require("../models/User");
+const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+
+const { sendEmail } = require("../services/emailService");
 
 const registerApplicant = async (req, res) => {
   try {
@@ -87,11 +92,7 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    const applicant = await Applicant.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    );
+    const applicant = await Applicant.findById(id);
 
     if (!applicant) {
       return res.status(404).json({
@@ -100,10 +101,102 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
+    // Rejected applicants do not get an account
+    if (status === "rejected") {
+      applicant.status = "rejected";
+      await applicant.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Applicant rejected",
+        applicant,
+      });
+    }
+
+    // Check if a user account already exists
+    const existingUser = await User.findOne({
+      email: applicant.email,
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: "A user account already exists for this applicant",
+      });
+    }
+
+    // Split full name into first and last name
+    const nameParts = applicant.fullName.trim().split(/\s+/);
+
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(" ") || firstName;
+
+    // Generate a temporary password
+    const temporaryPassword = crypto.randomBytes(6).toString("base64url");
+
+    // Hash the temporary password before saving it
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 12);
+
+    // Create the student account
+    const student = await User.create({
+      firstName,
+      lastName,
+      email: applicant.email,
+      password: hashedPassword,
+      role: "student",
+      status: "approved",
+      mustChangePassword: true,
+    });
+
+    // Mark applicant as passed
+    applicant.status = "passed";
+    await applicant.save();
+
+    // Send temporary login credentials
+    await sendEmail({
+      to: applicant.email,
+      subject: "ASTU MSJ Bootcamp - Student Account",
+      html: `
+        <h2>Congratulations, ${firstName}!</h2>
+
+        <p>
+          Your application to the ASTU MSJ Bootcamp has been accepted.
+        </p>
+
+        <p>Your student account has been created.</p>
+
+        <p>
+          <strong>Email:</strong> ${applicant.email}
+        </p>
+
+        <p>
+          <strong>Temporary Password:</strong> ${temporaryPassword}
+        </p>
+
+        <p>
+          Please log in using these credentials and change your password
+          immediately.
+        </p>
+
+        <p>
+          ASTU MSJ Bootcamp Management System
+        </p>
+      `,
+    });
+
     return res.status(200).json({
       success: true,
-      message: `Applicant status updated to ${status}`,
+      message:
+        "Applicant accepted, student account created, and credentials sent by email",
       applicant,
+      student: {
+        id: student._id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        email: student.email,
+        role: student.role,
+        mustChangePassword: student.mustChangePassword,
+      },
     });
   } catch (error) {
     console.error("Update applicant status error:", error);
