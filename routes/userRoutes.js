@@ -3,7 +3,12 @@ const express = require("express");
 const {
   createUser,
   updateUserStatus,
-  getBlacklistedStudents,
+  getBlacklistedUsers,
+  assignMentor,
+  getStudents,
+  getMentors,
+  getProfile,
+  updateProfile,
 } = require("../controllers/userController");
 
 const protect = require("../middleware/authMiddleware");
@@ -31,7 +36,40 @@ router.get(
   "/blacklisted",
   protect,
   authorize("admin"),
-  getBlacklistedStudents
+  getBlacklistedUsers
+);
+
+router.get(
+  "/students",
+  protect,
+  authorize("admin"),
+  getStudents
+);
+
+router.get(
+  "/mentors",
+  protect,
+  authorize("admin"),
+  getMentors
+);
+
+router.patch(
+  "/assign-mentor",
+  protect,
+  authorize("admin"),
+  assignMentor
+);
+
+router.get(
+  "/profile",
+  protect,
+  getProfile
+);
+
+router.patch(
+  "/profile",
+  protect,
+  updateProfile
 );
 
 module.exports = router;
