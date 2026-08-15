@@ -44,21 +44,40 @@ const login = async (req, res) => {
       });
     }
 
-    const token = jwt.sign(
+    const accessToken = jwt.sign(
       {
         userId: user._id,
         role: user.role,
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "1d",
+        expiresIn: "15m",
       },
     );
+
+    const refreshToken = jwt.sign(
+      {
+        userId: user._id,
+      },
+      process.env.JWT_REFRESH_SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      token,
+
+      accessToken,
+
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -74,6 +93,61 @@ const login = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error",
+    });
+  }
+};
+
+const refreshAccessToken = async (req, res) => {
+  try {
+    // Get refresh token from HTTP-only cookie
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token is required",
+      });
+    }
+
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.status !== "approved") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is suspended",
+      });
+    }
+
+    const newAccessToken = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "15m",
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      accessToken: newAccessToken,
+    });
+  } catch (error) {
+    console.error("Refresh token error:", error);
+
+    return res.status(401).json({
+      success: false,
+      message: "Refresh token is invalid or expired",
     });
   }
 };
@@ -167,6 +241,12 @@ const changePassword = async (req, res) => {
 
 const logout = async (req, res) => {
   try {
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    });
+
     return res.status(200).json({
       success: true,
       message: "Logged out successfully",
@@ -205,22 +285,20 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
+    const otp = crypto.randomInt(100000, 1000000).toString();
 
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(resetToken)
-      .digest("hex");
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
-    user.passwordResetToken = hashedToken;
-    user.passwordResetExpires = Date.now() + 15 * 60 * 1000;
+    user.passwordResetOtp = hashedOtp;
+
+    user.passwordResetOtpExpires = Date.now() + 10 * 60 * 1000;
 
     await user.save();
 
     await sendEmail({
       to: user.email,
 
-      subject: "ASTU MSJ Password Reset",
+      subject: "ASTU MSJ Password Reset OTP",
 
       html: `
         <h2>Password Reset Request</h2>
@@ -233,15 +311,19 @@ const forgotPassword = async (req, res) => {
         </p>
 
         <p>
-          Your password reset token is:
+          Your password reset OTP is:
+        </p>
+
+        <p style="
+          font-size: 28px;
+          font-weight: bold;
+          letter-spacing: 5px;
+        ">
+          ${otp}
         </p>
 
         <p>
-          <strong>${resetToken}</strong>
-        </p>
-
-        <p>
-          This token will expire in 15 minutes.
+          This OTP will expire in 10 minutes.
         </p>
 
         <p>
@@ -257,10 +339,7 @@ const forgotPassword = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "If an account with that email exists, a password reset email has been sent.",
-
-      resetToken,
+      message: "Password reset OTP has been sent to your email.",
     });
   } catch (error) {
     console.error("Forgot password error:", error);
@@ -274,20 +353,19 @@ const forgotPassword = async (req, res) => {
 
 const resetPassword = async (req, res) => {
   try {
-    const { token } = req.params;
-    const { newPassword } = req.body;
+    const { email, otp, newPassword } = req.body;
 
-    if (!token) {
+    if (!email || !otp || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Reset token is required",
+        message: "Email, OTP and new password are required",
       });
     }
 
-    if (!newPassword) {
+    if (!/^\d{6}$/.test(otp)) {
       return res.status(400).json({
         success: false,
-        message: "New password is required",
+        message: "OTP must be a 6-digit number",
       });
     }
 
@@ -298,11 +376,16 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
     const user = await User.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpires: {
+      email: normalizedEmail,
+
+      passwordResetOtp: hashedOtp,
+
+      passwordResetOtpExpires: {
         $gt: Date.now(),
       },
     }).select("+password");
@@ -310,14 +393,14 @@ const resetPassword = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: "Reset token is invalid or has expired",
+        message: "Invalid or expired OTP",
       });
     }
 
     user.password = await bcrypt.hash(newPassword, 12);
 
-    user.passwordResetToken = null;
-    user.passwordResetExpires = null;
+    user.passwordResetOtp = null;
+    user.passwordResetOtpExpires = null;
 
     user.mustChangePassword = false;
 
@@ -339,6 +422,7 @@ const resetPassword = async (req, res) => {
 
 module.exports = {
   login,
+  refreshAccessToken,
   getMe,
   changePassword,
   logout,
