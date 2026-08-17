@@ -24,8 +24,14 @@ router.post(
   authorize("admin"),
   createUser
 );
-router.delete("/:id", deleteUser);
 
+
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  deleteUser
+);
 
 router.get(
   "/mentors",
@@ -34,7 +40,7 @@ router.get(
   getMentors
 );
 
-// Get all students
+
 router.get(
   "/students",
   protect,
@@ -42,7 +48,6 @@ router.get(
   getStudents
 );
 
-// Assign a mentor to a student
 router.patch(
   "/assign-mentor",
   protect,
@@ -50,7 +55,7 @@ router.patch(
   assignMentor
 );
 
-// Suspend / approve user
+
 router.patch(
   "/:id/status",
   protect,
@@ -58,7 +63,7 @@ router.patch(
   updateUserStatus
 );
 
-// Get blacklisted users
+
 router.get(
   "/blacklist",
   protect,
@@ -67,13 +72,11 @@ router.get(
 );
 
 
-
 router.get(
   "/profile",
   protect,
   getProfile
 );
-
 
 router.put(
   "/profile",

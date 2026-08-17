@@ -1,9 +1,18 @@
-const Applicant = require("../models/Applicant");
-const User = require("../models/User");
+const Applicant = require("../models/applicant");
+const User = require("../models/user");
+const Batch = require("../models/batch");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 
-const { sendEmail } = require("../services/emailService");
+
+let sendEmail;
+try {
+  const emailService = require("../services/emailService");
+  sendEmail = emailService.sendEmail || emailService;
+} catch (e) {
+  sendEmail = null;
+}
+
 
 const registerApplicant = async (req, res) => {
   try {
@@ -11,78 +20,122 @@ const registerApplicant = async (req, res) => {
       fullName,
       email,
       phone,
+      schoolId,
       gender,
       year,
       department,
       experienceLevel,
+      githubUrl,
+      leetcodeUrl,
+      codeforcesUrl,
       about,
       agreedToRules,
+      batchId,
     } = req.body;
 
     if (
       !fullName ||
       !email ||
       !phone ||
+      !schoolId ||
       !gender ||
       !year ||
       !department ||
       !experienceLevel ||
+      !githubUrl ||
+      !leetcodeUrl ||
+      !codeforcesUrl ||
       !about
     ) {
       return res.status(400).json({
         success: false,
-        message: "Please fill in all required fields",
+        message: "Please fill in all required fields (including School ID, GitHub, LeetCode, and Codeforces)",
       });
- }
+    }
 
     if (!agreedToRules) {
       return res.status(400).json({
-        success: false,
         message: "You must agree to the bootcamp rules",
       });
     }
 
-    const existingApplicant = await Applicant.findOne({
-      email: email.toLowerCase(),
-    });
+    let targetBatch;
+    if (batchId) {
+      targetBatch = await Batch.findById(batchId);
+    } else {
+      targetBatch = await Batch.findOne({ isRegistrationOpen: true });
+    }
 
-    if (existingApplicant) {
-      return res.status(409).json({
+    if (!targetBatch) {
+      return res.status(400).json({
         success: false,
-        message: "This email is already registered",
+        message: "Registration is currently closed or no active batch was found.",
       });
     }
 
-    const applicant = await Applicant.create({
-      fullName,
-      email: email.toLowerCase(),
-      phone,
+    if (!targetBatch.isRegistrationOpen) {
+      return res.status(400).json({
+        success: false,
+        message: `Registration for ${targetBatch.name} is currently closed.`,
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    
+    let applicant = await Applicant.findOne({ email: normalizedEmail });
+
+    if (applicant) {
+      return res.status(409).json({
+        success: false,
+        message: "This email is already registered as an applicant",
+      });
+    }
+
+    applicant = await Applicant.create({
+      fullName: fullName.trim(),
+      email: normalizedEmail,
+      phone: phone.trim(),
+      schoolId: schoolId.trim(),
       gender,
       year,
-      department,
+      department: department.trim(),
       experienceLevel,
-      about,
+      githubUrl: githubUrl.trim(),
+      leetcodeUrl: leetcodeUrl.trim(),
+      codeforcesUrl: codeforcesUrl.trim(),
+      about: about.trim(),
       agreedToRules,
+      batch: targetBatch._id,
     });
-  return res.status(201).json({
+
+    return res.status(201).json({
       success: true,
-      message:
-        "Registration successful. Your application is pending interview.",
+      message: "Registration successful. Your application is pending review.",
       applicant,
     });
   } catch (error) {
     console.error("Registration error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error during registration",
+      error: error.message,
     });
   }
 };
 
+// 2. GET APPLICANTS
 const getApplicants = async (req, res) => {
   try {
-    const applicants = await Applicant.find()
+    const { gender, batchId, status } = req.query;
+
+    const filter = {};
+    if (gender) filter.gender = gender;
+    if (batchId) filter.batch = batchId;
+    if (status) filter.status = status;
+
+    const applicants = await Applicant.find(filter)
+      .populate("batch", "name isRegistrationOpen")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -92,10 +145,10 @@ const getApplicants = async (req, res) => {
     });
   } catch (error) {
     console.error("Get applicants error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error while getting applicants",
+      error: error.message,
     });
   }
 };
@@ -108,7 +161,7 @@ const updateApplicantStatus = async (req, res) => {
     if (!["passed", "rejected"].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: "Status must be either passed or rejected",
+        message: "Status must be either 'passed' or 'rejected'",
       });
     }
 
@@ -132,95 +185,111 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    const existingUser = await User.findOne({
-      email: applicant.email,
-    });
+    const normalizedEmail = applicant.email.toLowerCase().trim();
+    
+    let user = await User.findOne({ email: normalizedEmail });
 
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: "A user account already exists for this applicant",
+    let temporaryPassword = null;
+
+    if (user) {
+      applicant.status = "passed";
+      await applicant.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Applicant accepted! Student account is already active in database.",
+        applicant,
+        student: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          gender: user.gender,
+          schoolId: user.schoolId,
+          githubUrl: user.githubUrl,
+          leetcodeUrl: user.leetcodeUrl,
+          codeforcesUrl: user.codeforcesUrl,
+          batch: user.batch,
+          role: user.role,
+        },
       });
     }
 
-   
-    const nameParts = applicant.fullName.trim().split(/\s+/);
-
-    const firstName = nameParts[0];
+    
+    const nameParts = (applicant.fullName || "Student User").trim().split(/\s+/);
+    const firstName = nameParts[0] || "Student";
     const lastName = nameParts.slice(1).join(" ") || firstName;
 
-  
-    const temporaryPassword = crypto.randomBytes(6).toString("base64url");
+    temporaryPassword = crypto.randomBytes(4).toString("hex") + "Aa1!";
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
-
-    const hashedPassword = await bcrypt.hash(temporaryPassword, 12);
-
-  
-    const student = await User.create({
+    user = await User.create({
       firstName,
       lastName,
-      email: applicant.email,
+      email: normalizedEmail,
+      phone: applicant.phone || "",
+      schoolId: applicant.schoolId || "",
+      githubUrl: applicant.githubUrl || "",
+      leetcodeUrl: applicant.leetcodeUrl || "",
+      codeforcesUrl: applicant.codeforcesUrl || "",
+      gender: applicant.gender || "Female",
+      batch: applicant.batch || null,
       password: hashedPassword,
       role: "student",
       status: "approved",
       mustChangePassword: true,
     });
 
-  
     applicant.status = "passed";
     await applicant.save();
 
-    await sendEmail({
-      to: applicant.email,
-      subject: "ASTU MSJ Bootcamp - Student Account",
-      html: `
-        <h2>Congratulations, ${firstName}!</h2>
-
-        <p>
-          Your application to the ASTU MSJ Bootcamp has been accepted.
-        </p>
-
-        <p>Your student account has been created.</p>
-
-        <p>
-          <strong>Email:</strong> ${applicant.email}
-        </p>
-
-        <p>
-          <strong>Temporary Password:</strong> ${temporaryPassword}
-        </p>
-
-        <p>
-          Please log in using these credentials and change your password
-          immediately.
-        </p>
-
-        <p>
-          ASTU MSJ Bootcamp Management System
-        </p>
-      `,
-    });
+  
+    if (sendEmail && typeof sendEmail === "function") {
+      try {
+        await sendEmail({
+          to: normalizedEmail,
+          subject: "ASTU MSJ Bootcamp - Student Account",
+          html: `
+            <h2>Congratulations, ${firstName}!</h2>
+            <p>Your application to the ASTU MSJ Bootcamp has been accepted.</p>
+            <p>Your student account has been created.</p>
+            <p><strong>Email:</strong> ${normalizedEmail}</p>
+            <p><strong>Temporary Password:</strong> ${temporaryPassword}</p>
+            <p>Please log in and change your password immediately.</p>
+            <p>ASTU MSJ Bootcamp Management System</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.warn("⚠️ Email service failed:", emailErr.message);
+      }
+    }
 
     return res.status(200).json({
       success: true,
-      message:
-        "Applicant accepted, student account created, and credentials sent by email",
+      message: "Applicant accepted and student account created successfully",
       applicant,
       student: {
-        id: student._id,
-        firstName: student.firstName,
-        lastName: student.lastName,
-        email: student.email,
-        role: student.role,
-        mustChangePassword: student.mustChangePassword,
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        schoolId: user.schoolId,
+        githubUrl: user.githubUrl,
+        leetcodeUrl: user.leetcodeUrl,
+        codeforcesUrl: user.codeforcesUrl,
+        gender: user.gender,
+        batch: user.batch,
+        role: user.role,
+        temporaryPassword,
+        mustChangePassword: user.mustChangePassword,
       },
     });
   } catch (error) {
     console.error("Update applicant status error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error while updating applicant status",
+      error: error.message,
     });
   }
 };

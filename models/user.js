@@ -14,7 +14,45 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    gender: {
+      type: String,
+      enum: ["Male", "Female"],
+      required: true,
+    },
+
+    batch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
+      default: null,
+    },
+
     phone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+
+    schoolId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+  
+    githubUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    leetcodeUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    codeforcesUrl: {
       type: String,
       default: "",
       trim: true,
@@ -57,11 +95,19 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
-    assignedMentor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
+    assignedMentors: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
+    assignedStudents: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
 
     status: {
       type: String,
@@ -91,7 +137,8 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.model("User", userSchema);
+module.exports =
+  mongoose.models.User || mongoose.model("User", userSchema);

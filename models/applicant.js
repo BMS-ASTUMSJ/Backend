@@ -22,6 +22,13 @@ const applicantSchema = new mongoose.Schema(
       trim: true,
     },
 
+    
+    schoolId: {
+      type: String,
+      required: true,
+      trim: true, 
+    },
+
     gender: {
       type: String,
       enum: ["Male", "Female"],
@@ -30,7 +37,7 @@ const applicantSchema = new mongoose.Schema(
 
     year: {
       type: String,
-      enum: ["1st Year", "2nd Year", "3rd Year"],
+      enum: ["1st Year", "2nd Year", "3rd Year", "4th Year", "5th Year"],
       required: true,
     },
 
@@ -42,8 +49,27 @@ const applicantSchema = new mongoose.Schema(
 
     experienceLevel: {
       type: String,
-      enum: ["Beginner", "Intermediate"],
+      enum: ["Beginner", "Intermediate", "Advanced"],
       required: true,
+    },
+
+    
+    githubUrl: {
+      type: String,
+      required: true,
+      trim: true, 
+    },
+
+    leetcodeUrl: {
+      type: String,
+      required: true,
+      trim: true, 
+    },
+
+    codeforcesUrl: {
+      type: String,
+      required: true,
+      trim: true, 
     },
 
     about: {
@@ -57,6 +83,12 @@ const applicantSchema = new mongoose.Schema(
       required: true,
     },
 
+    batch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
+      required: true,
+    },
+
     status: {
       type: String,
       enum: ["pending", "passed", "rejected"],
@@ -65,7 +97,8 @@ const applicantSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.model("Applicant", applicantSchema);
+module.exports =
+  mongoose.models.Applicant || mongoose.model("Applicant", applicantSchema);
