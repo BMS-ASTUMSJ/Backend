@@ -20,11 +20,34 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Current batch
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       default: null,
     },
+
+    // Complete batch membership history
+    batchHistory: [
+      {
+        batch: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Batch",
+          required: true,
+        },
+
+        role: {
+          type: String,
+          enum: ["mentor", "student"],
+          required: true,
+        },
+
+        joinedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
 
     phone: {
       type: String,
@@ -32,14 +55,12 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-
     schoolId: {
       type: String,
       default: "",
       trim: true,
     },
 
-  
     githubUrl: {
       type: String,
       default: "",
@@ -137,8 +158,7 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-module.exports =
-  mongoose.models.User || mongoose.model("User", userSchema);
+module.exports = mongoose.models.User || mongoose.model("User", userSchema);

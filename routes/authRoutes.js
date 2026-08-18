@@ -21,15 +21,12 @@ router.post("/login", login);
 router.post("/google", googleLogin);
 router.post("/forgot-password", forgotPassword);
 router.post("/verify-reset-otp", verifyResetOtp);
-router.post("/reset-password", resetPassword);
-
 
 router.post("/reset-password", resetPassword);
 
 router.get("/me", protect, getMe);
 
 router.patch("/change-password", protect, changePassword);
-
 
 router.post("/logout", protect, logout);
 

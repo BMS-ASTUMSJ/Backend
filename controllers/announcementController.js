@@ -50,19 +50,12 @@ const createAnnouncement = async (req, res) => {
 
 const getAnnouncements = async (req, res) => {
   try {
-    // protect middleware should already create req.user
     if (!req.user) {
       return res.status(401).json({
         success: false,
         message: "Not authenticated.",
       });
     }
-
-    console.log("GET ANNOUNCEMENTS");
-    console.log("Authenticated user:", {
-      id: req.user._id || req.user.id,
-      role: req.user.role,
-    });
 
     let filter = {};
 
@@ -88,8 +81,6 @@ const getAnnouncements = async (req, res) => {
     const announcements = await Announcement.find(filter)
       .sort({ createdAt: -1 })
       .lean();
-
-    console.log("Announcements found:", announcements.length);
 
     return res.status(200).json({
       success: true,
@@ -118,12 +109,43 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated.",
+      });
+    }
+
     const announcement = await Announcement.findById(id);
 
     if (!announcement) {
       return res.status(404).json({
         success: false,
         message: "Announcement not found.",
+      });
+    }
+
+    if (req.user.role === "student" && announcement.audience !== "all") {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to view this announcement.",
+      });
+    }
+
+    if (
+      req.user.role === "mentor" &&
+      !["all", "mentor"].includes(announcement.audience)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to view this announcement.",
+      });
+    }
+
+    if (!["student", "mentor", "admin"].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Invalid user role.",
       });
     }
 

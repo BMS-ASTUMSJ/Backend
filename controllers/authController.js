@@ -6,8 +6,24 @@ const { OAuth2Client } = require("google-auth-library");
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const User = require("../models/User");
-
 const { sendEmail } = require("../services/emailService");
+
+// ============================================================
+// HELPER
+// ============================================================
+
+const getUserBatchHistory = async (user) => {
+  await user.populate({
+    path: "batchHistory.batch",
+    select: "name status startDate endDate description",
+  });
+
+  return user.batchHistory || [];
+};
+
+// ============================================================
+// LOGIN
+// ============================================================
 
 const login = async (req, res) => {
   try {
@@ -75,6 +91,8 @@ const login = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    const batchHistory = await getUserBatchHistory(user);
+
     return res.status(200).json({
       success: true,
       message: "Login successful",
@@ -87,6 +105,10 @@ const login = async (req, res) => {
         email: user.email,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+
+        batch: user.batch,
+
+        batchHistory,
       },
     });
   } catch (error) {
@@ -98,6 +120,10 @@ const login = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// REFRESH ACCESS TOKEN
+// ============================================================
 
 const refreshAccessToken = async (req, res) => {
   try {
@@ -153,17 +179,37 @@ const refreshAccessToken = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET CURRENT USER
+// ============================================================
+
 const getMe = async (req, res) => {
   try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const batchHistory = await getUserBatchHistory(user);
+
     return res.status(200).json({
       success: true,
+
       user: {
-        id: req.user._id,
-        firstName: req.user.firstName,
-        lastName: req.user.lastName,
-        email: req.user.email,
-        role: req.user.role,
-        mustChangePassword: req.user.mustChangePassword,
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        mustChangePassword: user.mustChangePassword,
+
+        batch: user.batch,
+
+        batchHistory,
       },
     });
   } catch (error) {
@@ -175,6 +221,10 @@ const getMe = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// CHANGE PASSWORD
+// ============================================================
 
 const changePassword = async (req, res) => {
   try {
@@ -240,6 +290,10 @@ const changePassword = async (req, res) => {
   }
 };
 
+// ============================================================
+// LOGOUT
+// ============================================================
+
 const logout = async (req, res) => {
   try {
     res.clearCookie("refreshToken", {
@@ -261,6 +315,10 @@ const logout = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// FORGOT PASSWORD
+// ============================================================
 
 const forgotPassword = async (req, res) => {
   try {
@@ -291,16 +349,13 @@ const forgotPassword = async (req, res) => {
     const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
     user.passwordResetOtp = hashedOtp;
-
     user.passwordResetOtpExpires = Date.now() + 10 * 60 * 1000;
-
     user.passwordResetVerified = false;
 
     await user.save();
 
     await sendEmail({
       to: user.email,
-
       subject: "ASTU MSJ Password Reset OTP",
 
       html: `
@@ -354,6 +409,10 @@ const forgotPassword = async (req, res) => {
   }
 };
 
+// ============================================================
+// VERIFY RESET OTP
+// ============================================================
+
 const verifyResetOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -378,9 +437,7 @@ const verifyResetOtp = async (req, res) => {
 
     const user = await User.findOne({
       email: normalizedEmail,
-
       passwordResetOtp: hashedOtp,
-
       passwordResetOtpExpires: {
         $gt: Date.now(),
       },
@@ -394,7 +451,6 @@ const verifyResetOtp = async (req, res) => {
     }
 
     user.passwordResetVerified = true;
-
     user.passwordResetOtp = null;
     user.passwordResetOtpExpires = null;
 
@@ -413,6 +469,10 @@ const verifyResetOtp = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// RESET PASSWORD
+// ============================================================
 
 const resetPassword = async (req, res) => {
   try {
@@ -460,7 +520,6 @@ const resetPassword = async (req, res) => {
     user.passwordResetVerified = false;
     user.passwordResetOtp = null;
     user.passwordResetOtpExpires = null;
-
     user.mustChangePassword = false;
 
     await user.save();
@@ -478,6 +537,10 @@ const resetPassword = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// GOOGLE LOGIN
+// ============================================================
 
 const googleLogin = async (req, res) => {
   try {
@@ -543,10 +606,13 @@ const googleLogin = async (req, res) => {
       },
     );
 
+    const batchHistory = await getUserBatchHistory(user);
+
     return res.status(200).json({
       success: true,
       message: "Google login successful",
       accessToken,
+
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -554,6 +620,10 @@ const googleLogin = async (req, res) => {
         email: user.email,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+
+        batch: user.batch,
+
+        batchHistory,
       },
     });
   } catch (error) {

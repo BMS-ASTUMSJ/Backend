@@ -6,7 +6,7 @@ const batchSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      trim: true, // e.g. "Batch 1", "Batch 2"
+      trim: true,
     },
 
     status: {
@@ -37,5 +37,7 @@ const batchSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+batchSchema.index({ status: 1 });
 
 module.exports = mongoose.models.Batch || mongoose.model("Batch", batchSchema);

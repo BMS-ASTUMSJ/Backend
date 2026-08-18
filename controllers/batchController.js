@@ -40,7 +40,6 @@ const createBatch = async (req, res) => {
       });
     }
 
-    // Only one active batch
     if (batchStatus === "active") {
       await Batch.updateMany(
         { status: "active" },
@@ -79,7 +78,7 @@ const createBatch = async (req, res) => {
 };
 
 // ============================================================
-// 2. GET ALL BATCHES
+// 2. GET ALL BATCHES - ADMIN
 // ============================================================
 
 const getBatches = async (req, res) => {
@@ -105,7 +104,178 @@ const getBatches = async (req, res) => {
 };
 
 // ============================================================
-// 3. GET ACTIVE REGISTRATION BATCH
+// 3. GET MY BATCHES
+//
+// Admin:
+//     gets all batches
+//
+// Student/Mentor:
+//     gets only batches found in batchHistory
+// ============================================================
+
+const getMyBatches = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select(
+      "role batch batchHistory",
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    // Admin can see every batch.
+    if (user.role === "admin") {
+      const batches = await Batch.find().sort({
+        createdAt: -1,
+      });
+
+      return res.status(200).json({
+        success: true,
+        batches: batches.map((batch) => ({
+          batch,
+          role: "admin",
+        })),
+      });
+    }
+
+    const history = user.batchHistory || [];
+
+    const batchIds = history.map((item) => item.batch).filter(Boolean);
+
+    // Backward compatibility for existing users.
+    if (
+      user.batch &&
+      !batchIds.some((id) => id.toString() === user.batch.toString())
+    ) {
+      batchIds.push(user.batch);
+    }
+
+    const batches = await Batch.find({
+      _id: { $in: batchIds },
+    }).sort({
+      createdAt: -1,
+    });
+
+    const result = batches.map((batch) => {
+      const membership = history.find(
+        (item) => item.batch && item.batch.toString() === batch._id.toString(),
+      );
+
+      let role = membership?.role || null;
+
+      // Backward compatibility.
+      if (!role && user.batch) {
+        if (user.batch.toString() === batch._id.toString()) {
+          role = user.role === "mentor" ? "mentor" : "student";
+        }
+      }
+
+      return {
+        batch,
+        role,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      batches: result,
+    });
+  } catch (error) {
+    console.error("Get my batches error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching your batches.",
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================
+// 4. GET ONE OF MY BATCHES
+// ============================================================
+
+const getMyBatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid batch ID.",
+      });
+    }
+
+    const user = await User.findById(req.user._id).select(
+      "role batch batchHistory",
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    const batch = await Batch.findById(id);
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found.",
+      });
+    }
+
+    // Admin can access every batch.
+    if (user.role === "admin") {
+      return res.status(200).json({
+        success: true,
+        batch,
+        role: "admin",
+      });
+    }
+
+    const membership = user.batchHistory?.find(
+      (item) => item.batch && item.batch.toString() === id,
+    );
+
+    if (membership) {
+      return res.status(200).json({
+        success: true,
+        batch,
+        role: membership.role,
+      });
+    }
+
+    // Backward compatibility.
+    if (user.batch && user.batch.toString() === id) {
+      return res.status(200).json({
+        success: true,
+        batch,
+        role: user.role === "mentor" ? "mentor" : "student",
+      });
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: "You do not have access to this batch.",
+    });
+  } catch (error) {
+    console.error("Get my batch error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching batch.",
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================
+// 5. GET ACTIVE REGISTRATION BATCH
 // ============================================================
 
 const getActiveRegistrationBatch = async (req, res) => {
@@ -131,7 +301,7 @@ const getActiveRegistrationBatch = async (req, res) => {
 };
 
 // ============================================================
-// 4. TOGGLE REGISTRATION
+// 6. TOGGLE REGISTRATION
 // ============================================================
 
 const toggleBatchRegistration = async (req, res) => {
@@ -156,7 +326,6 @@ const toggleBatchRegistration = async (req, res) => {
 
     const newRegistrationStatus = !batch.isRegistrationOpen;
 
-    // Open registration only for this batch
     if (newRegistrationStatus === true) {
       await Batch.updateMany(
         {
@@ -199,7 +368,7 @@ const toggleBatchRegistration = async (req, res) => {
 };
 
 // ============================================================
-// 5. UPDATE BATCH STATUS
+// 7. UPDATE BATCH STATUS
 // ============================================================
 
 const updateBatchStatus = async (req, res) => {
@@ -230,8 +399,6 @@ const updateBatchStatus = async (req, res) => {
       });
     }
 
-    // If making this batch ACTIVE,
-    // complete the previous active batch.
     if (status === "active") {
       await Batch.updateMany(
         {
@@ -247,7 +414,6 @@ const updateBatchStatus = async (req, res) => {
       );
     }
 
-    // Completed batches cannot have registration open
     if (status === "completed") {
       batch.isRegistrationOpen = false;
     }
@@ -278,7 +444,7 @@ const updateBatchStatus = async (req, res) => {
 };
 
 // ============================================================
-// 6. GET DASHBOARD STATISTICS
+// 8. GET DASHBOARD STATISTICS
 // ============================================================
 
 const getBatchDashboardStats = async (req, res) => {
@@ -287,8 +453,6 @@ const getBatchDashboardStats = async (req, res) => {
       createdAt: -1,
     });
 
-    // Current batch is determined by STATUS,
-    // not registration.
     const activeBatch =
       allBatches.find((batch) => batch.status === "active") || null;
 
@@ -311,6 +475,7 @@ const getBatchDashboardStats = async (req, res) => {
 
         User.find({
           role: "mentor",
+          batch: activeBatch._id,
         }),
 
         Team.find({
@@ -342,22 +507,28 @@ const getBatchDashboardStats = async (req, res) => {
       };
     }
 
-    // ========================================================
-    // BATCH HISTORY
-    // ========================================================
-
     const batchHistory = await Promise.all(
       allBatches.map(async (batch) => {
-        const [students, teams] = await Promise.all([
-          User.find({
-            role: "student",
-            batch: batch._id,
-          }),
+        const students = await User.find({
+          $or: [
+            {
+              role: "student",
+              batch: batch._id,
+            },
+            {
+              batchHistory: {
+                $elemMatch: {
+                  batch: batch._id,
+                  role: "student",
+                },
+              },
+            },
+          ],
+        });
 
-          Team.find({
-            batch: batch._id,
-          }),
-        ]);
+        const teams = await Team.find({
+          batch: batch._id,
+        });
 
         return {
           _id: batch._id,
@@ -381,10 +552,6 @@ const getBatchDashboardStats = async (req, res) => {
         };
       }),
     );
-
-    // ========================================================
-    // OVERALL STATISTICS
-    // ========================================================
 
     const [totalStudentsAllTime, totalMentors, totalApplicants] =
       await Promise.all([
@@ -430,13 +597,11 @@ const getBatchDashboardStats = async (req, res) => {
   }
 };
 
-// ============================================================
-// EXPORT
-// ============================================================
-
 module.exports = {
   createBatch,
   getBatches,
+  getMyBatches,
+  getMyBatch,
   getActiveRegistrationBatch,
   toggleBatchRegistration,
   updateBatchStatus,

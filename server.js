@@ -1,3 +1,6 @@
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -13,6 +16,8 @@ const teamRoutes = require("./routes/teamRoutes"); // NEW: Team Management route
 const announcementRoutes = require("./routes/announcementRoutes");
 
 const app = express();
+
+app.use("/api/batch-history", require("./routes/batchHistoryRoutes"));
 
 app.use(
   cors({
@@ -33,6 +38,8 @@ app.use("/api/batches", batchRoutes);
 app.use("/api/applicants", applicantRoutes);
 app.use("/api/teams", teamRoutes);
 app.use("/api/announcements", announcementRoutes);
+app.use("/api/batch-history", require("./routes/batchHistoryRoutes"));
+app.use("/api/auth", require("./routes/authRoutes"));
 
 app.get("/", (req, res) => {
   res.status(200).json({

@@ -5,12 +5,17 @@ const Batch = require("../models/batch");
 const crypto = require("crypto");
 
 let sendEmail;
+
 try {
   const emailService = require("../services/emailService");
   sendEmail = emailService.sendEmail || emailService;
 } catch (e) {
   sendEmail = null;
 }
+
+// ============================================================
+// CREATE USER
+// ============================================================
 
 const createUser = async (req, res) => {
   try {
@@ -32,7 +37,10 @@ const createUser = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (existingUser) {
       return res.status(409).json({
@@ -42,12 +50,29 @@ const createUser = async (req, res) => {
     }
 
     let batch = null;
-    if (batchId && mongoose.Types.ObjectId.isValid(batchId)) {
+
+    if (batchId) {
+      if (!mongoose.Types.ObjectId.isValid(batchId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid batch ID",
+        });
+      }
+
       const batchDoc = await Batch.findById(batchId);
-      if (batchDoc) batch = batchDoc._id;
+
+      if (!batchDoc) {
+        return res.status(404).json({
+          success: false,
+          message: "Batch not found",
+        });
+      }
+
+      batch = batchDoc._id;
     }
 
     const temporaryPassword = crypto.randomBytes(4).toString("hex") + "Aa1!";
+
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
     const user = await User.create({
@@ -56,7 +81,19 @@ const createUser = async (req, res) => {
       email: normalizedEmail,
       phone: phone ? phone.trim() : "",
       gender,
+
       batch,
+
+      batchHistory: batch
+        ? [
+            {
+              batch,
+              role,
+              joinedAt: new Date(),
+            },
+          ]
+        : [],
+
       password: hashedPassword,
       status: "approved",
       role,
@@ -67,19 +104,35 @@ const createUser = async (req, res) => {
       try {
         await sendEmail({
           to: normalizedEmail,
+
           subject: "Your ASTU MSJ Bootcamp Account",
+
           html: `
             <div style="font-family: Arial, sans-serif; line-height: 1.6;">
               <h2>Welcome to ASTU MSJ Bootcamp</h2>
+
               <p>Hello ${firstName},</p>
-              <p>An account has been created for you as a <strong>${role}</strong>.</p>
+
+              <p>
+                An account has been created for you as a
+                <strong>${role}</strong>.
+              </p>
+
               <p>Your login credentials are:</p>
+
               <p>
                 <strong>Email:</strong> ${normalizedEmail}<br>
                 <strong>Temporary Password:</strong> ${temporaryPassword}
               </p>
-              <p>Please change your password after logging in.</p>
-              <p>Regards,<br>ASTU MSJ Bootcamp Team</p>
+
+              <p>
+                Please change your password after logging in.
+              </p>
+
+              <p>
+                Regards,<br>
+                ASTU MSJ Bootcamp Team
+              </p>
             </div>
           `,
         });
@@ -91,6 +144,7 @@ const createUser = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: `${role} account created successfully.`,
+
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -98,16 +152,24 @@ const createUser = async (req, res) => {
         email: user.email,
         gender: user.gender,
         role: user.role,
+        batch: user.batch,
+        batchHistory: user.batchHistory,
         temporaryPassword,
       },
     });
   } catch (error) {
     console.error("Create user error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Server error during creation" });
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error during creation",
+    });
   }
 };
+
+// ============================================================
+// UPDATE USER STATUS
+// ============================================================
 
 const updateUserStatus = async (req, res) => {
   try {
@@ -115,32 +177,42 @@ const updateUserStatus = async (req, res) => {
     const { status } = req.body;
 
     if (!["approved", "suspended"].includes(status)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid status" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status",
+      });
     }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid User ID" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid User ID",
+      });
     }
 
     const targetUser = await User.findById(id);
-    if (!targetUser)
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
+
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     if (targetUser.role === "admin") {
-      return res
-        .status(403)
-        .json({ success: false, message: "Admins cannot be suspended" });
+      return res.status(403).json({
+        success: false,
+        message: "Admins cannot be suspended",
+      });
     }
 
     const updatedUser = await User.findByIdAndUpdate(
       id,
-      { status: status },
-      { new: true, runValidators: false },
+      { status },
+      {
+        new: true,
+        runValidators: false,
+      },
     ).select("-password");
 
     return res.status(200).json({
@@ -150,27 +222,36 @@ const updateUserStatus = async (req, res) => {
     });
   } catch (error) {
     console.error("Update status error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Server error updating status" });
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error updating status",
+    });
   }
 };
+
+// ============================================================
+// ASSIGN MENTOR
+// ============================================================
 
 const assignMentor = async (req, res) => {
   try {
     const { studentId, mentorIds } = req.body;
 
     if (!studentId || !Array.isArray(mentorIds) || mentorIds.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Student and Mentors are required" });
+      return res.status(400).json({
+        success: false,
+        message: "Student and Mentors are required",
+      });
     }
 
     const student = await User.findById(studentId);
+
     if (!student || student.role !== "student") {
-      return res
-        .status(404)
-        .json({ success: false, message: "Student not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
     }
 
     const mentors = await User.find({
@@ -178,6 +259,7 @@ const assignMentor = async (req, res) => {
       role: "mentor",
       status: "approved",
     });
+
     if (mentors.length !== mentorIds.length) {
       return res.status(400).json({
         success: false,
@@ -185,152 +267,450 @@ const assignMentor = async (req, res) => {
       });
     }
 
-    for (const m of mentors) {
-      if (m.gender !== student.gender) {
+    for (const mentor of mentors) {
+      if (mentor.gender !== student.gender) {
         return res.status(400).json({
           success: false,
-          message: `Gender mismatch: ${student.gender} student cannot have ${m.gender} mentor`,
+          message: `Gender mismatch: ${student.gender} student cannot have ${mentor.gender} mentor`,
         });
       }
     }
 
-    await User.findByIdAndUpdate(studentId, { assignedMentors: mentorIds });
+    await User.findByIdAndUpdate(studentId, {
+      assignedMentors: mentorIds,
+    });
 
     await User.updateMany(
-      { _id: { $in: mentorIds } },
-      { $addToSet: { assignedStudents: studentId } },
+      {
+        _id: { $in: mentorIds },
+      },
+      {
+        $addToSet: {
+          assignedStudents: studentId,
+        },
+      },
     );
 
-    return res
-      .status(200)
-      .json({ success: true, message: "Mentors assigned successfully" });
+    return res.status(200).json({
+      success: true,
+      message: "Mentors assigned successfully",
+    });
   } catch (error) {
     console.error("Assign mentor error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Server error assigning mentor" });
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error assigning mentor",
+    });
   }
 };
+
+// ============================================================
+// GET STUDENTS
+// ============================================================
 
 const getStudents = async (req, res) => {
   try {
     const { gender, batchId, status } = req.query;
-    const filter = { role: "student" };
-    if (gender) filter.gender = gender;
-    if (batchId && mongoose.Types.ObjectId.isValid(batchId))
+
+    const filter = {
+      role: "student",
+    };
+
+    if (gender) {
+      filter.gender = gender;
+    }
+
+    if (batchId) {
+      if (!mongoose.Types.ObjectId.isValid(batchId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid batch ID",
+        });
+      }
+
       filter.batch = batchId;
-    if (status) filter.status = status;
+    }
+
+    if (status) {
+      filter.status = status;
+    }
 
     const students = await User.find(filter)
       .select("-password")
       .populate("assignedMentors", "firstName lastName email gender phone")
-      .populate("batch", "name")
-      .sort({ createdAt: -1 });
+      .populate("batch", "name status startDate endDate")
+      .sort({
+        createdAt: -1,
+      });
 
-    return res
-      .status(200)
-      .json({ success: true, count: students.length, students });
+    return res.status(200).json({
+      success: true,
+      count: students.length,
+      students,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: "Error fetching students" });
+    console.error("Get students error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching students",
+    });
   }
 };
+
+// ============================================================
+// GET MENTORS
+// ============================================================
 
 const getMentors = async (req, res) => {
   try {
     const { gender, batchId, status } = req.query;
-    const filter = { role: "mentor" };
-    if (gender) filter.gender = gender;
-    if (batchId && mongoose.Types.ObjectId.isValid(batchId))
+
+    const filter = {
+      role: "mentor",
+    };
+
+    if (gender) {
+      filter.gender = gender;
+    }
+
+    if (batchId) {
+      if (!mongoose.Types.ObjectId.isValid(batchId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid batch ID",
+        });
+      }
+
       filter.batch = batchId;
-    if (status) filter.status = status;
+    }
+
+    if (status) {
+      filter.status = status;
+    }
 
     const mentors = await User.find(filter)
       .select("-password")
       .populate("assignedStudents", "firstName lastName email gender phone")
-      .populate("batch", "name")
-      .sort({ createdAt: -1 });
+      .populate("batch", "name status startDate endDate")
+      .sort({
+        createdAt: -1,
+      });
 
-    return res
-      .status(200)
-      .json({ success: true, count: mentors.length, mentors });
+    return res.status(200).json({
+      success: true,
+      count: mentors.length,
+      mentors,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: "Error fetching mentors" });
+    console.error("Get mentors error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching mentors",
+    });
   }
 };
+
+// ============================================================
+// DELETE USER
+// ============================================================
 
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
     const user = await User.findById(id);
 
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    if (user.role === "admin")
-      return res
-        .status(403)
-        .json({ success: false, message: "Admin cannot be deleted" });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.role === "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin cannot be deleted",
+      });
+    }
 
     await User.findByIdAndDelete(id);
-    return res
-      .status(200)
-      .json({ success: true, message: "User deleted successfully" });
+
+    return res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: "Error deleting user" });
+    console.error("Delete user error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting user",
+    });
   }
 };
+
+// ============================================================
+// GET BLACKLISTED USERS
+// ============================================================
 
 const getBlacklistedUsers = async (req, res) => {
   try {
-    const users = await User.find({ status: "suspended" }).select("-password");
-    return res.status(200).json({ success: true, count: users.length, users });
+    const users = await User.find({
+      status: "suspended",
+    }).select("-password");
+
+    return res.status(200).json({
+      success: true,
+      count: users.length,
+      users,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: "Error fetching blacklist" });
+    console.error("Get blacklist error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching blacklist",
+    });
   }
 };
+
+// ============================================================
+// GET PROFILE
+// ============================================================
 
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .select("-password")
-      .populate("assignedMentors assignedStudents batch");
-    res.status(200).json({ success: true, user });
+      .populate("assignedMentors")
+      .populate("assignedStudents")
+      .populate("batch")
+      .populate("batchHistory.batch");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching profile" });
+    console.error("Get profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching profile",
+    });
   }
 };
 
+// ============================================================
+// UPDATE PROFILE
+// ============================================================
+
 const updateProfile = async (req, res) => {
   try {
-    const { phone, bio } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { phone, bio },
-      { new: true, runValidators: true },
-    ).select("-password");
-    res.status(200).json({ success: true, user });
+    const {
+      phone,
+      bio,
+      firstName,
+      lastName,
+      githubUrl,
+      leetcodeUrl,
+      codeforcesUrl,
+    } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (phone !== undefined) {
+      user.phone = phone;
+    }
+
+    if (bio !== undefined) {
+      user.bio = bio;
+    }
+
+    if (firstName !== undefined) {
+      user.firstName = firstName;
+    }
+
+    if (lastName !== undefined) {
+      user.lastName = lastName;
+    }
+
+    if (githubUrl !== undefined) {
+      user.githubUrl = githubUrl;
+    }
+
+    if (leetcodeUrl !== undefined) {
+      user.leetcodeUrl = leetcodeUrl;
+    }
+
+    if (codeforcesUrl !== undefined) {
+      user.codeforcesUrl = codeforcesUrl;
+    }
+
+    await user.save();
+
+    const updatedUser = await User.findById(user._id)
+      .select("-password")
+      .populate("assignedMentors")
+      .populate("assignedStudents")
+      .populate("batch")
+      .populate("batchHistory.batch");
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error updating profile" });
+    console.error("Update profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error updating profile",
+    });
   }
 };
+
+// ============================================================
+// CHANGE USER BATCH / ROLE
+// ============================================================
+
+const changeUserBatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { batchId, role } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid batch ID",
+      });
+    }
+
+    if (!["student", "mentor"].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Role must be student or mentor",
+      });
+    }
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.role === "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin batch cannot be changed",
+      });
+    }
+
+    const batch = await Batch.findById(batchId);
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found",
+      });
+    }
+
+    // Update current batch and current role
+    user.batch = batch._id;
+    user.role = role;
+
+    if (!Array.isArray(user.batchHistory)) {
+      user.batchHistory = [];
+    }
+
+    const existingHistoryIndex = user.batchHistory.findIndex(
+      (item) => item.batch && item.batch.toString() === batch._id.toString(),
+    );
+
+    if (existingHistoryIndex === -1) {
+      user.batchHistory.push({
+        batch: batch._id,
+        role,
+        joinedAt: new Date(),
+      });
+    } else {
+      user.batchHistory[existingHistoryIndex].role = role;
+    }
+
+    await user.save();
+
+    const updatedUser = await User.findById(user._id)
+      .select("-password")
+      .populate("batch", "name status startDate endDate description")
+      .populate(
+        "batchHistory.batch",
+        "name status startDate endDate description",
+      );
+
+    return res.status(200).json({
+      success: true,
+      message: `User moved to ${batch.name} as ${role}`,
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Change user batch error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error changing user batch",
+    });
+  }
+};
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   createUser,
   updateUserStatus,
-  deleteUser,
-  getBlacklistedUsers,
   assignMentor,
   getStudents,
   getMentors,
+  deleteUser,
+  getBlacklistedUsers,
   getProfile,
   updateProfile,
+  changeUserBatch,
 };

@@ -22,11 +22,10 @@ const applicantSchema = new mongoose.Schema(
       trim: true,
     },
 
-    
     schoolId: {
       type: String,
       required: true,
-      trim: true, 
+      trim: true,
     },
 
     gender: {
@@ -53,23 +52,22 @@ const applicantSchema = new mongoose.Schema(
       required: true,
     },
 
-    
     githubUrl: {
       type: String,
       required: true,
-      trim: true, 
+      trim: true,
     },
 
     leetcodeUrl: {
       type: String,
       required: true,
-      trim: true, 
+      trim: true,
     },
 
     codeforcesUrl: {
       type: String,
       required: true,
-      trim: true, 
+      trim: true,
     },
 
     about: {
@@ -97,7 +95,7 @@ const applicantSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 module.exports =

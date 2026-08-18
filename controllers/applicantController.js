@@ -4,7 +4,6 @@ const Batch = require("../models/batch");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 
-
 let sendEmail;
 try {
   const emailService = require("../services/emailService");
@@ -12,7 +11,6 @@ try {
 } catch (e) {
   sendEmail = null;
 }
-
 
 const registerApplicant = async (req, res) => {
   try {
@@ -49,7 +47,8 @@ const registerApplicant = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Please fill in all required fields (including School ID, GitHub, LeetCode, and Codeforces)",
+        message:
+          "Please fill in all required fields (including School ID, GitHub, LeetCode, and Codeforces)",
       });
     }
 
@@ -69,7 +68,8 @@ const registerApplicant = async (req, res) => {
     if (!targetBatch) {
       return res.status(400).json({
         success: false,
-        message: "Registration is currently closed or no active batch was found.",
+        message:
+          "Registration is currently closed or no active batch was found.",
       });
     }
 
@@ -82,7 +82,6 @@ const registerApplicant = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    
     let applicant = await Applicant.findOne({ email: normalizedEmail });
 
     if (applicant) {
@@ -186,7 +185,7 @@ const updateApplicantStatus = async (req, res) => {
     }
 
     const normalizedEmail = applicant.email.toLowerCase().trim();
-    
+
     let user = await User.findOne({ email: normalizedEmail });
 
     let temporaryPassword = null;
@@ -197,7 +196,8 @@ const updateApplicantStatus = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: "Applicant accepted! Student account is already active in database.",
+        message:
+          "Applicant accepted! Student account is already active in database.",
         applicant,
         student: {
           id: user._id,
@@ -215,8 +215,9 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    
-    const nameParts = (applicant.fullName || "Student User").trim().split(/\s+/);
+    const nameParts = (applicant.fullName || "Student User")
+      .trim()
+      .split(/\s+/);
     const firstName = nameParts[0] || "Student";
     const lastName = nameParts.slice(1).join(" ") || firstName;
 
@@ -243,7 +244,6 @@ const updateApplicantStatus = async (req, res) => {
     applicant.status = "passed";
     await applicant.save();
 
-  
     if (sendEmail && typeof sendEmail === "function") {
       try {
         await sendEmail({
