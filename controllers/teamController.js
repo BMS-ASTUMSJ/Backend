@@ -1,17 +1,32 @@
 const mongoose = require("mongoose");
 const Team = require("../models/team");
 const User = require("../models/user");
-const Batch = require("../models/batch");
 
-
+/*
+|--------------------------------------------------------------------------
+| CREATE TEAM
+|--------------------------------------------------------------------------
+| Creates a team with:
+| - exactly 2 mentors
+| - one or more students
+| - optional project title
+|--------------------------------------------------------------------------
+*/
 const createTeam = async (req, res) => {
   try {
-    const { name, batchId, gender, mentorIds, studentIds, projectTitle } = req.body;
+    const { name, gender, mentorIds, studentIds, projectTitle } = req.body;
 
-    if (!name || !batchId || !gender) {
+    if (!name || !gender) {
       return res.status(400).json({
         success: false,
-        message: "Team name, batchId, and gender (Male/Female) are required",
+        message: "Team name and gender are required",
+      });
+    }
+
+    if (!name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Team name cannot be empty",
       });
     }
 
@@ -22,128 +37,178 @@ const createTeam = async (req, res) => {
       });
     }
 
-    
-    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+    if (!Array.isArray(mentorIds)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid Batch ID",
+        message: "mentorIds must be an array",
       });
     }
 
-    const batch = await Batch.findById(batchId);
-    if (!batch) {
-      return res.status(404).json({
-        success: false,
-        message: "Batch not found",
-      });
-    }
-
-    
-    const selectedMentors = mentorIds || [];
-    if (!Array.isArray(selectedMentors) || selectedMentors.length === 0) {
+    if (mentorIds.length !== 2) {
       return res.status(400).json({
         success: false,
-        message: "Please assign at least 1 or 2 mentors to this team",
+        message: "A team must have exactly 2 mentors",
       });
     }
 
-    if (selectedMentors.length > 2) {
-      return res.status(400).json({
-        success: false,
-        message: "A team can have a maximum of 2 mentors",
-      });
-    }
-
-    const mentors = await User.find({
-      _id: { $in: selectedMentors },
-      role: "mentor",
-      status: "approved",
-    });
-
-    if (mentors.length !== selectedMentors.length) {
-      return res.status(400).json({
-        success: false,
-        message: "One or more selected mentors were not found or are suspended",
-      });
-    }
-
-    
-    for (const m of mentors) {
-      const mentorGender = m.gender || "Female";
-      if (mentorGender !== gender) {
+    for (const mentorId of mentorIds) {
+      if (!mongoose.Types.ObjectId.isValid(mentorId)) {
         return res.status(400).json({
           success: false,
-          message: `Mentor gender mismatch: Team is ${gender}, but mentor ${m.firstName} ${m.lastName} is ${mentorGender}.`,
+          message: `Invalid mentor ID: ${mentorId}`,
         });
       }
     }
 
-    
-    const selectedStudents = studentIds || [];
-    if (!Array.isArray(selectedStudents) || selectedStudents.length === 0) {
+    const uniqueMentorIds = [...new Set(mentorIds.map((id) => id.toString()))];
+
+    if (uniqueMentorIds.length !== 2) {
       return res.status(400).json({
         success: false,
-        message: "Please add students to this team (typically 5 to 7 students)",
+        message: "The two mentors must be different",
+      });
+    }
+
+    const mentors = await User.find({
+      _id: {
+        $in: mentorIds,
+      },
+      role: "mentor",
+      status: "approved",
+    });
+
+    if (mentors.length !== 2) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Both selected mentors must exist, be approved, and have the mentor role",
+      });
+    }
+
+    for (const mentor of mentors) {
+      if (mentor.gender !== gender) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `Mentor ${mentor.firstName} ${mentor.lastName} ` +
+            `does not match the ${gender} team`,
+        });
+      }
+    }
+
+    if (!Array.isArray(studentIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "studentIds must be an array",
+      });
+    }
+
+    if (studentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select at least one student",
+      });
+    }
+
+    for (const studentId of studentIds) {
+      if (!mongoose.Types.ObjectId.isValid(studentId)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid student ID: ${studentId}`,
+        });
+      }
+    }
+
+    const uniqueStudentIds = [
+      ...new Set(studentIds.map((id) => id.toString())),
+    ];
+
+    if (uniqueStudentIds.length !== studentIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Duplicate students are not allowed",
       });
     }
 
     const students = await User.find({
-      _id: { $in: selectedStudents },
+      _id: {
+        $in: studentIds,
+      },
       role: "student",
       status: "approved",
     });
 
-    if (students.length !== selectedStudents.length) {
+    if (students.length !== studentIds.length) {
       return res.status(400).json({
         success: false,
-        message: "One or more selected students were not found or are suspended",
+        message:
+          "One or more selected students were not found or are not approved",
       });
     }
 
-    
-    for (const s of students) {
-      const studentGender = s.gender || "Female";
-      if (studentGender !== gender) {
+    for (const student of students) {
+      if (student.gender !== gender) {
         return res.status(400).json({
           success: false,
-          message: `Student gender mismatch: Team is ${gender}, but student ${s.firstName} ${s.lastName} is ${studentGender}.`,
+          message:
+            `Student ${student.firstName} ${student.lastName} ` +
+            `does not match the ${gender} team`,
         });
       }
     }
 
     const team = await Team.create({
       name: name.trim(),
-      batch: batchId,
+
       gender,
-      mentors: selectedMentors,
-      students: selectedStudents,
+
+      mentors: mentorIds,
+
+      students: studentIds,
+
       projectTitle: projectTitle ? projectTitle.trim() : "",
     });
 
-    // Automatically link Mentors to all Students in this Team
     await User.updateMany(
-      { _id: { $in: selectedStudents } },
-      { assignedMentors: selectedMentors, batch: batchId }
+      {
+        _id: {
+          $in: studentIds,
+        },
+      },
+      {
+        $set: {
+          assignedMentors: mentorIds,
+        },
+      },
     );
 
-    
     await User.updateMany(
-      { _id: { $in: selectedMentors } },
-      { $addToSet: { assignedStudents: { $each: selectedStudents } } }
+      {
+        _id: {
+          $in: mentorIds,
+        },
+      },
+      {
+        $addToSet: {
+          assignedStudents: {
+            $each: studentIds,
+          },
+        },
+      },
     );
 
     const populatedTeam = await Team.findById(team._id)
-      .populate("batch", "name")
       .populate("mentors", "firstName lastName email gender phone")
       .populate("students", "firstName lastName email gender phone");
 
     return res.status(201).json({
       success: true,
-      message: "Team created and mentors assigned successfully",
+      message: "Team created successfully with 2 mentors",
       team: populatedTeam,
     });
   } catch (error) {
     console.error("Create team error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while creating team",
@@ -152,20 +217,27 @@ const createTeam = async (req, res) => {
   }
 };
 
-
+/*
+|--------------------------------------------------------------------------
+| GET ALL TEAMS
+|--------------------------------------------------------------------------
+*/
 const getTeams = async (req, res) => {
   try {
-    const { gender, batchId } = req.query;
+    const { gender } = req.query;
 
     const filter = {};
-    if (gender) filter.gender = gender;
-    if (batchId && mongoose.Types.ObjectId.isValid(batchId)) filter.batch = batchId;
+
+    if (gender) {
+      filter.gender = gender;
+    }
 
     const teams = await Team.find(filter)
-      .populate("batch", "name")
       .populate("mentors", "firstName lastName email gender phone")
       .populate("students", "firstName lastName email gender phone")
-      .sort({ createdAt: -1 });
+      .sort({
+        createdAt: -1,
+      });
 
     return res.status(200).json({
       success: true,
@@ -174,6 +246,7 @@ const getTeams = async (req, res) => {
     });
   } catch (error) {
     console.error("Get teams error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while getting teams",
@@ -182,6 +255,11 @@ const getTeams = async (req, res) => {
   }
 };
 
+/*
+|--------------------------------------------------------------------------
+| GET TEAM BY ID
+|--------------------------------------------------------------------------
+*/
 const getTeamById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -194,7 +272,6 @@ const getTeamById = async (req, res) => {
     }
 
     const team = await Team.findById(id)
-      .populate("batch", "name")
       .populate("mentors", "firstName lastName email gender phone")
       .populate("students", "firstName lastName email gender phone");
 
@@ -211,13 +288,20 @@ const getTeamById = async (req, res) => {
     });
   } catch (error) {
     console.error("Get team by id error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while getting team",
       error: error.message,
     });
   }
-}
+};
+
+/*
+|--------------------------------------------------------------------------
+| DELETE TEAM
+|--------------------------------------------------------------------------
+*/
 const deleteTeam = async (req, res) => {
   try {
     const { id } = req.params;
@@ -230,11 +314,44 @@ const deleteTeam = async (req, res) => {
     }
 
     const team = await Team.findById(id);
+
     if (!team) {
       return res.status(404).json({
         success: false,
         message: "Team not found",
       });
+    }
+
+    if (team.students && team.students.length > 0) {
+      await User.updateMany(
+        {
+          _id: {
+            $in: team.students,
+          },
+        },
+        {
+          $unset: {
+            assignedMentors: "",
+          },
+        },
+      );
+    }
+
+    if (team.mentors && team.mentors.length > 0) {
+      await User.updateMany(
+        {
+          _id: {
+            $in: team.mentors,
+          },
+        },
+        {
+          $pull: {
+            assignedStudents: {
+              $in: team.students || [],
+            },
+          },
+        },
+      );
     }
 
     await Team.findByIdAndDelete(id);
@@ -245,6 +362,7 @@ const deleteTeam = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete team error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while deleting team",

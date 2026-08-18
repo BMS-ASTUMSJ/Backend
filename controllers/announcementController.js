@@ -1,68 +1,95 @@
+const mongoose = require("mongoose");
 const Announcement = require("../models/Announcement");
 
 const createAnnouncement = async (req, res) => {
   try {
-    const { title, body, audience } = req.body;
+    const { title, body, audience = "all" } = req.body;
 
-    if (!title || !body || !audience) {
+    if (!title || !title.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Title, body, and audience are required",
+        message: "Title is required.",
+      });
+    }
+
+    if (!body || !body.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Announcement body is required.",
       });
     }
 
     if (!["all", "mentor"].includes(audience)) {
       return res.status(400).json({
         success: false,
-        message: "Audience must be either all or mentor",
+        message: "Audience must be either all or mentor.",
       });
     }
 
     const announcement = await Announcement.create({
-      title,
-      body,
+      title: title.trim(),
+      body: body.trim(),
       audience,
-     
     });
 
     return res.status(201).json({
       success: true,
-      message: "Announcement created successfully",
+      message: "Announcement created successfully.",
       announcement,
     });
   } catch (error) {
-    console.error("Create announcement error:", error);
+    console.error("CREATE ANNOUNCEMENT ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Failed to create announcement.",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
+
 const getAnnouncements = async (req, res) => {
   try {
+    // protect middleware should already create req.user
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated.",
+      });
+    }
+
+    console.log("GET ANNOUNCEMENTS");
+    console.log("Authenticated user:", {
+      id: req.user._id || req.user.id,
+      role: req.user.role,
+    });
+
     let filter = {};
 
-    
     if (req.user.role === "student") {
       filter = {
         audience: "all",
       };
-    }
-
-
-    if (req.user.role === "mentor") {
+    } else if (req.user.role === "mentor") {
       filter = {
-        audience: { $in: ["all", "mentor"] },
+        audience: {
+          $in: ["all", "mentor"],
+        },
       };
-    }
-
-    if (req.user.role === "admin") {
+    } else if (req.user.role === "admin") {
       filter = {};
+    } else {
+      return res.status(403).json({
+        success: false,
+        message: "Invalid user role.",
+      });
     }
 
     const announcements = await Announcement.find(filter)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    console.log("Announcements found:", announcements.length);
 
     return res.status(200).json({
       success: true,
@@ -70,40 +97,46 @@ const getAnnouncements = async (req, res) => {
       announcements,
     });
   } catch (error) {
-    console.error("Get announcements error:", error);
+    console.error("GET ANNOUNCEMENTS ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Failed to fetch announcements.",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
 
-const deleteAnnouncement = async (req, res) => {
+const getAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid announcement ID.",
+      });
+    }
 
     const announcement = await Announcement.findById(id);
 
     if (!announcement) {
       return res.status(404).json({
         success: false,
-        message: "Announcement not found",
+        message: "Announcement not found.",
       });
     }
 
-    await Announcement.findByIdAndDelete(id);
-
     return res.status(200).json({
       success: true,
-      message: "Announcement deleted successfully",
+      announcement,
     });
   } catch (error) {
-    console.error("Delete announcement error:", error);
+    console.error("GET SINGLE ANNOUNCEMENT ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Failed to fetch announcement.",
     });
   }
 };
@@ -113,46 +146,99 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, body, audience } = req.body;
 
-    if (!title || !body || !audience) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Title, body, and audience are required",
+        message: "Invalid announcement ID.",
+      });
+    }
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Title is required.",
+      });
+    }
+
+    if (!body || !body.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Announcement body is required.",
       });
     }
 
     if (!["all", "mentor"].includes(audience)) {
       return res.status(400).json({
         success: false,
-        message: "Audience must be either all or mentor",
+        message: "Audience must be either all or mentor.",
       });
     }
 
-    const announcement = await Announcement.findById(id);
+    const announcement = await Announcement.findByIdAndUpdate(
+      id,
+      {
+        title: title.trim(),
+        body: body.trim(),
+        audience,
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
 
     if (!announcement) {
       return res.status(404).json({
         success: false,
-        message: "Announcement not found",
+        message: "Announcement not found.",
       });
     }
 
-    announcement.title = title;
-    announcement.body = body;
-    announcement.audience = audience;
-
-    await announcement.save();
-
     return res.status(200).json({
       success: true,
-      message: "Announcement updated successfully",
+      message: "Announcement updated successfully.",
       announcement,
     });
   } catch (error) {
-    console.error("Update announcement error:", error);
+    console.error("UPDATE ANNOUNCEMENT ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Failed to update announcement.",
+    });
+  }
+};
+
+const deleteAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid announcement ID.",
+      });
+    }
+
+    const announcement = await Announcement.findByIdAndDelete(id);
+
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: "Announcement not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Announcement deleted successfully.",
+    });
+  } catch (error) {
+    console.error("DELETE ANNOUNCEMENT ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete announcement.",
     });
   }
 };
@@ -160,6 +246,7 @@ const updateAnnouncement = async (req, res) => {
 module.exports = {
   createAnnouncement,
   getAnnouncements,
-  deleteAnnouncement,
+  getAnnouncement,
   updateAnnouncement,
+  deleteAnnouncement,
 };

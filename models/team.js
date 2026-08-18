@@ -5,13 +5,7 @@ const teamSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      trim: true, 
-    },
-
-    batch: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Batch",
-      required: true,
+      trim: true,
     },
 
     gender: {
@@ -20,7 +14,6 @@ const teamSchema = new mongoose.Schema(
       required: true,
     },
 
-    
     mentors: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -28,23 +21,16 @@ const teamSchema = new mongoose.Schema(
       },
     ],
 
-    
     students: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-
-    projectTitle: {
-      type: String,
-      default: "",
-    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-
-module.exports = mongoose.models.Team || mongoose.model("Team", teamSchema);
+module.exports = mongoose.model("Team", teamSchema);

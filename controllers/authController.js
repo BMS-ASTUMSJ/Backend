@@ -54,7 +54,7 @@ const login = async (req, res) => {
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "15m",
+        expiresIn: "1d",
       },
     );
 
@@ -479,7 +479,6 @@ const resetPassword = async (req, res) => {
   }
 };
 
-
 const googleLogin = async (req, res) => {
   try {
     const { credential } = req.body;
@@ -498,10 +497,7 @@ const googleLogin = async (req, res) => {
 
     const payload = ticket.getPayload();
 
-    const {
-      email,
-      sub: googleId,
-    } = payload;
+    const { email, sub: googleId } = payload;
 
     if (!email) {
       return res.status(400).json({
@@ -544,7 +540,7 @@ const googleLogin = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "1d",
-      }
+      },
     );
 
     return res.status(200).json({
