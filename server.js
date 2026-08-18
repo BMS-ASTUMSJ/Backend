@@ -9,8 +9,9 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const batchRoutes = require("./routes/batchRoutes");
 const applicantRoutes = require("./routes/applicantRoutes");
-const teamRoutes = require("./routes/teamRoutes"); // NEW: Team Management routes
+const teamRoutes = require("./routes/teamRoutes");
 const announcementRoutes = require("./routes/announcementRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use("/api/batches", batchRoutes);
 app.use("/api/applicants", applicantRoutes);
 app.use("/api/teams", teamRoutes);
 app.use("/api/announcements", announcementRoutes);
+app.use("/api/attendance", attendanceRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({
