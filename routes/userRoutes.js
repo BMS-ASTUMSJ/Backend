@@ -17,7 +17,9 @@ const authorize = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-
+// ==========================================
+// CREATE USER
+// ==========================================
 router.post(
   "/",
   protect,
@@ -25,7 +27,9 @@ router.post(
   createUser
 );
 
-
+// ==========================================
+// DELETE USER
+// ==========================================
 router.delete(
   "/:id",
   protect,
@@ -33,6 +37,9 @@ router.delete(
   deleteUser
 );
 
+// ==========================================
+// GET MENTORS
+// ==========================================
 router.get(
   "/mentors",
   protect,
@@ -40,7 +47,9 @@ router.get(
   getMentors
 );
 
-
+// ==========================================
+// GET STUDENTS
+// ==========================================
 router.get(
   "/students",
   protect,
@@ -48,6 +57,9 @@ router.get(
   getStudents
 );
 
+// ==========================================
+// ASSIGN MENTOR
+// ==========================================
 router.patch(
   "/assign-mentor",
   protect,
@@ -55,7 +67,9 @@ router.patch(
   assignMentor
 );
 
-
+// ==========================================
+// UPDATE USER STATUS
+// ==========================================
 router.patch(
   "/:id/status",
   protect,
@@ -63,7 +77,9 @@ router.patch(
   updateUserStatus
 );
 
-
+// ==========================================
+// GET BLACKLISTED USERS
+// ==========================================
 router.get(
   "/blacklist",
   protect,
@@ -71,14 +87,18 @@ router.get(
   getBlacklistedUsers
 );
 
-
+// ==========================================
+// GET MY PROFILE
+// ==========================================
 router.get(
   "/profile",
   protect,
   getProfile
 );
 
-router.put(
+
+// ==========================================
+router.patch(
   "/profile",
   protect,
   updateProfile

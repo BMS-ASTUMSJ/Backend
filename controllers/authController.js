@@ -9,6 +9,7 @@ const User = require("../models/User");
 
 const { sendEmail } = require("../services/emailService");
 
+
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -38,7 +39,10 @@ const login = async (req, res) => {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password);
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.password
+    );
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -47,6 +51,7 @@ const login = async (req, res) => {
       });
     }
 
+   
     const accessToken = jwt.sign(
       {
         userId: user._id,
@@ -55,7 +60,7 @@ const login = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "1d",
-      },
+      }
     );
 
     const refreshToken = jwt.sign(
@@ -65,19 +70,24 @@ const login = async (req, res) => {
       process.env.JWT_REFRESH_SECRET,
       {
         expiresIn: "7d",
-      },
+      }
     );
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite:
+        process.env.NODE_ENV === "production"
+          ? "none"
+          : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+   
     return res.status(200).json({
       success: true,
       message: "Login successful",
+
       accessToken,
 
       user: {
@@ -86,6 +96,8 @@ const login = async (req, res) => {
         lastName: user.lastName,
         email: user.email,
         role: user.role,
+
+        // IMPORTANT
         mustChangePassword: user.mustChangePassword,
       },
     });
@@ -99,9 +111,10 @@ const login = async (req, res) => {
   }
 };
 
+
 const refreshAccessToken = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken;
+    const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
       return res.status(401).json({
@@ -110,7 +123,10 @@ const refreshAccessToken = async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const decoded = jwt.verify(
+      refreshToken,
+      process.env.JWT_REFRESH_SECRET
+    );
 
     const user = await User.findById(decoded.userId);
 
@@ -136,7 +152,7 @@ const refreshAccessToken = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "15m",
-      },
+      }
     );
 
     return res.status(200).json({
@@ -153,17 +169,31 @@ const refreshAccessToken = async (req, res) => {
   }
 };
 
+
 const getMe = async (req, res) => {
   try {
+    const user = await User.findById(req.user._id).select(
+      "-password"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     return res.status(200).json({
       success: true,
+
       user: {
-        id: req.user._id,
-        firstName: req.user.firstName,
-        lastName: req.user.lastName,
-        email: req.user.email,
-        role: req.user.role,
-        mustChangePassword: req.user.mustChangePassword,
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+
+        mustChangePassword: user.mustChangePassword,
       },
     });
   } catch (error) {
@@ -176,25 +206,33 @@ const getMe = async (req, res) => {
   }
 };
 
+
 const changePassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const {
+      currentPassword,
+      newPassword,
+    } = req.body;
 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Current password and new password are required",
+        message:
+          "Current password and new password are required",
       });
     }
 
     if (newPassword.length < 8) {
       return res.status(400).json({
         success: false,
-        message: "New password must be at least 8 characters",
+        message:
+          "New password must be at least 8 characters",
       });
     }
 
-    const user = await User.findById(req.user._id).select("+password");
+    const user = await User.findById(req.user._id).select(
+      "+password"
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -203,7 +241,10 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+    const passwordMatch = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -212,16 +253,25 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const samePassword = await bcrypt.compare(newPassword, user.password);
+    const samePassword = await bcrypt.compare(
+      newPassword,
+      user.password
+    );
 
     if (samePassword) {
       return res.status(400).json({
         success: false,
-        message: "New password must be different from current password",
+        message:
+          "New password must be different from current password",
       });
     }
 
-    user.password = await bcrypt.hash(newPassword, 12);
+    user.password = await bcrypt.hash(
+      newPassword,
+      12
+    );
+
+    
     user.mustChangePassword = false;
 
     await user.save();
@@ -229,6 +279,15 @@ const changePassword = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Password changed successfully",
+
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        mustChangePassword: false,
+      },
     });
   } catch (error) {
     console.error("Change password error:", error);
@@ -240,12 +299,70 @@ const changePassword = async (req, res) => {
   }
 };
 
+
+const skipChangePassword = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+   
+    if (
+      user.role !== "student" &&
+      user.role !== "mentor"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Password change skip is only available for students and mentors.",
+      });
+    }
+
+    user.mustChangePassword = false;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password change skipped successfully",
+
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        mustChangePassword: false,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Skip password change error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+
 const logout = async (req, res) => {
   try {
     res.clearCookie("refreshToken", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite:
+        process.env.NODE_ENV === "production"
+          ? "none"
+          : "lax",
     });
 
     return res.status(200).json({
@@ -262,6 +379,7 @@ const logout = async (req, res) => {
   }
 };
 
+
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -273,7 +391,9 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = email
+      .toLowerCase()
+      .trim();
 
     const user = await User.findOne({
       email: normalizedEmail,
@@ -282,17 +402,24 @@ const forgotPassword = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User with this email does not exist.",
+        message:
+          "User with this email does not exist.",
       });
     }
 
-    const otp = crypto.randomInt(100000, 1000000).toString();
+    const otp = crypto
+      .randomInt(100000, 1000000)
+      .toString();
 
-    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+    const hashedOtp = crypto
+      .createHash("sha256")
+      .update(otp)
+      .digest("hex");
 
     user.passwordResetOtp = hashedOtp;
 
-    user.passwordResetOtpExpires = Date.now() + 10 * 60 * 1000;
+    user.passwordResetOtpExpires =
+      Date.now() + 10 * 60 * 1000;
 
     user.passwordResetVerified = false;
 
@@ -342,10 +469,14 @@ const forgotPassword = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Password reset OTP has been sent to your email.",
+      message:
+        "Password reset OTP has been sent to your email.",
     });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    console.error(
+      "Forgot password error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -353,6 +484,7 @@ const forgotPassword = async (req, res) => {
     });
   }
 };
+
 
 const verifyResetOtp = async (req, res) => {
   try {
@@ -372,9 +504,14 @@ const verifyResetOtp = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = email
+      .toLowerCase()
+      .trim();
 
-    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+    const hashedOtp = crypto
+      .createHash("sha256")
+      .update(otp)
+      .digest("hex");
 
     const user = await User.findOne({
       email: normalizedEmail,
@@ -405,7 +542,10 @@ const verifyResetOtp = async (req, res) => {
       message: "OTP verified successfully",
     });
   } catch (error) {
-    console.error("Verify OTP error:", error);
+    console.error(
+      "Verify OTP error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -414,6 +554,7 @@ const verifyResetOtp = async (req, res) => {
   }
 };
 
+
 const resetPassword = async (req, res) => {
   try {
     const { email, newPassword } = req.body;
@@ -421,18 +562,22 @@ const resetPassword = async (req, res) => {
     if (!email || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Email and new password are required",
+        message:
+          "Email and new password are required",
       });
     }
 
     if (newPassword.length < 8) {
       return res.status(400).json({
         success: false,
-        message: "New password must be at least 8 characters",
+        message:
+          "New password must be at least 8 characters",
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = email
+      .toLowerCase()
+      .trim();
 
     const user = await User.findOne({
       email: normalizedEmail,
@@ -442,20 +587,28 @@ const resetPassword = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: "OTP verification is required before resetting your password",
+        message:
+          "OTP verification is required before resetting your password",
       });
     }
 
-    const samePassword = await bcrypt.compare(newPassword, user.password);
+    const samePassword = await bcrypt.compare(
+      newPassword,
+      user.password
+    );
 
     if (samePassword) {
       return res.status(400).json({
         success: false,
-        message: "New password must be different from your current password",
+        message:
+          "New password must be different from your current password",
       });
     }
 
-    user.password = await bcrypt.hash(newPassword, 12);
+    user.password = await bcrypt.hash(
+      newPassword,
+      12
+    );
 
     user.passwordResetVerified = false;
     user.passwordResetOtp = null;
@@ -470,7 +623,10 @@ const resetPassword = async (req, res) => {
       message: "Password reset successfully",
     });
   } catch (error) {
-    console.error("Reset password error:", error);
+    console.error(
+      "Reset password error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -490,23 +646,31 @@ const googleLogin = async (req, res) => {
       });
     }
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    const ticket =
+      await googleClient.verifyIdToken({
+        idToken: credential,
+        audience:
+          process.env.GOOGLE_CLIENT_ID,
+      });
 
     const payload = ticket.getPayload();
 
-    const { email, sub: googleId } = payload;
+    const {
+      email,
+      sub: googleId,
+    } = payload;
 
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: "Google account email not available",
+        message:
+          "Google account email not available",
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = email
+      .toLowerCase()
+      .trim();
 
     const user = await User.findOne({
       email: normalizedEmail,
@@ -523,7 +687,8 @@ const googleLogin = async (req, res) => {
     if (user.status !== "approved") {
       return res.status(403).json({
         success: false,
-        message: "Your account is suspended",
+        message:
+          "Your account is suspended",
       });
     }
 
@@ -540,28 +705,72 @@ const googleLogin = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "1d",
-      },
+      }
     );
 
     return res.status(200).json({
       success: true,
       message: "Google login successful",
+
       accessToken,
+
       user: {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
         role: user.role,
-        mustChangePassword: user.mustChangePassword,
+
+        mustChangePassword:
+          user.mustChangePassword,
       },
     });
   } catch (error) {
-    console.error("Google login error:", error);
+    console.error(
+      "Google login error:",
+      error
+    );
 
     return res.status(401).json({
       success: false,
-      message: "Invalid Google credential",
+      message:
+        "Invalid Google credential",
+    });
+  }
+};
+const skipPasswordChange = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Only students and mentors should use this flow
+    if (!["student", "mentor"].includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "This action is only available for students and mentors.",
+      });
+    }
+
+    user.mustChangePassword = false;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password change skipped successfully.",
+    });
+  } catch (error) {
+    console.error("Skip password change error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
     });
   }
 };
@@ -571,9 +780,11 @@ module.exports = {
   refreshAccessToken,
   getMe,
   changePassword,
+  skipChangePassword,
   logout,
   forgotPassword,
   verifyResetOtp,
   resetPassword,
   googleLogin,
+  skipPasswordChange
 };

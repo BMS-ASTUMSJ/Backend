@@ -6,36 +6,30 @@ const batchSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      trim: true, // e.g. "Batch 1", "Batch 2"
+      trim: true,
+    },
+
+    startDate: {
+      type: Date,
+      required: true,
+    },
+
+    endDate: {
+      type: Date,
+      default: null,
     },
 
     status: {
       type: String,
       enum: ["upcoming", "active", "completed"],
-      default: "active",
-    },
-
-    isRegistrationOpen: {
-      type: Boolean,
-      default: false,
-    },
-
-    startDate: {
-      type: Date,
-    },
-
-    endDate: {
-      type: Date,
-    },
-
-    description: {
-      type: String,
-      default: "",
+      default: "upcoming",
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.models.Batch || mongoose.model("Batch", batchSchema);
+module.exports =
+  mongoose.models.Batch ||
+  mongoose.model("Batch", batchSchema);

@@ -1,4 +1,8 @@
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
 require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -9,8 +13,10 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const batchRoutes = require("./routes/batchRoutes");
 const applicantRoutes = require("./routes/applicantRoutes");
-const teamRoutes = require("./routes/teamRoutes"); // NEW: Team Management routes
+const teamRoutes = require("./routes/teamRoutes");
 const announcementRoutes = require("./routes/announcementRoutes");
+const assignmentRoutes = require("./routes/assignmentRoutes");
+const submissionRoutes = require("./routes/submissionRoutes");
 
 const app = express();
 
@@ -18,7 +24,7 @@ app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
-  }),
+  })
 );
 
 app.use(express.json());
@@ -33,6 +39,8 @@ app.use("/api/batches", batchRoutes);
 app.use("/api/applicants", applicantRoutes);
 app.use("/api/teams", teamRoutes);
 app.use("/api/announcements", announcementRoutes);
+app.use("/api/assignments", assignmentRoutes);
+app.use("/api/submissions", submissionRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -50,6 +58,7 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
+
   res.status(500).json({
     success: false,
     message: "Internal server error",

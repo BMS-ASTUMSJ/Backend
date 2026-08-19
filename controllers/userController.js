@@ -303,23 +303,111 @@ const getProfile = async (req, res) => {
     const user = await User.findById(req.user._id)
       .select("-password")
       .populate("assignedMentors assignedStudents batch");
-    res.status(200).json({ success: true, user });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching profile" });
+    console.error("GET PROFILE ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching profile",
+    });
   }
 };
 
 const updateProfile = async (req, res) => {
   try {
-    const { phone, bio } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { phone, bio },
-      { new: true, runValidators: true },
-    ).select("-password");
-    res.status(200).json({ success: true, user });
+    const {
+      firstName,
+      lastName,
+      gender,
+      phone,
+      schoolId,
+      githubUrl,
+      leetcodeUrl,
+      codeforcesUrl,
+      bio,
+      profileImage,
+    } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Update only profile fields
+    if (firstName !== undefined) {
+      user.firstName = firstName.trim();
+    }
+
+    if (lastName !== undefined) {
+      user.lastName = lastName.trim();
+    }
+
+    if (gender !== undefined) {
+      user.gender = gender;
+    }
+
+    if (phone !== undefined) {
+      user.phone = phone.trim();
+    }
+
+    if (schoolId !== undefined) {
+      user.schoolId = schoolId.trim();
+    }
+
+    if (githubUrl !== undefined) {
+      user.githubUrl = githubUrl.trim();
+    }
+
+    if (leetcodeUrl !== undefined) {
+      user.leetcodeUrl = leetcodeUrl.trim();
+    }
+
+    if (codeforcesUrl !== undefined) {
+      user.codeforcesUrl = codeforcesUrl.trim();
+    }
+
+    if (bio !== undefined) {
+      user.bio = bio.trim();
+    }
+
+    if (profileImage !== undefined) {
+      user.profileImage = profileImage;
+    }
+
+    await user.save();
+
+    const updatedUser = await User.findById(req.user._id)
+      .select("-password")
+      .populate("assignedMentors assignedStudents batch");
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error updating profile" });
+    console.error("UPDATE PROFILE ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error updating profile",
+    });
   }
 };
 

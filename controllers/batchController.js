@@ -1,22 +1,29 @@
-const mongoose = require("mongoose");
+const Batch = require("../models/Batch");
 
-const Batch = require("../models/batch");
-const User = require("../models/user");
-const Team = require("../models/team");
-const Applicant = require("../models/applicant");
-
-// ============================================================
-// 1. CREATE BATCH
-// ============================================================
-
+// ======================================================
+// CREATE BATCH
+// ADMIN ONLY
+// ======================================================
 const createBatch = async (req, res) => {
   try {
-    const { name, startDate, endDate, description, status } = req.body;
+    const {
+      name,
+      startDate,
+      endDate,
+      status = "upcoming",
+    } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
         message: "Batch name is required.",
+      });
+    }
+
+    if (!startDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Start date is required.",
       });
     }
 
@@ -31,35 +38,11 @@ const createBatch = async (req, res) => {
       });
     }
 
-    const batchStatus = status || "upcoming";
-
-    if (!["upcoming", "active", "completed"].includes(batchStatus)) {
-      return res.status(400).json({
-        success: false,
-        message: "Status must be 'upcoming', 'active', or 'completed'.",
-      });
-    }
-
-    // Only one active batch
-    if (batchStatus === "active") {
-      await Batch.updateMany(
-        { status: "active" },
-        {
-          $set: {
-            status: "completed",
-            isRegistrationOpen: false,
-          },
-        },
-      );
-    }
-
     const batch = await Batch.create({
       name: name.trim(),
       startDate,
-      endDate,
-      description,
-      status: batchStatus,
-      isRegistrationOpen: false,
+      endDate: endDate || null,
+      status,
     });
 
     return res.status(201).json({
@@ -78,19 +61,17 @@ const createBatch = async (req, res) => {
   }
 };
 
-// ============================================================
-// 2. GET ALL BATCHES
-// ============================================================
-
+// ======================================================
+// GET ALL BATCHES
+// ======================================================
 const getBatches = async (req, res) => {
   try {
     const batches = await Batch.find().sort({
-      createdAt: -1,
+      startDate: -1,
     });
 
     return res.status(200).json({
       success: true,
-      count: batches.length,
       batches,
     });
   } catch (error) {
@@ -104,341 +85,151 @@ const getBatches = async (req, res) => {
   }
 };
 
-// ============================================================
-// 3. GET ACTIVE REGISTRATION BATCH
-// ============================================================
-
-const getActiveRegistrationBatch = async (req, res) => {
+// ======================================================
+// GET BATCH STATISTICS
+// ======================================================
+const getBatchStats = async (req, res) => {
   try {
-    const activeBatch = await Batch.findOne({
-      isRegistrationOpen: true,
+    const totalBatches = await Batch.countDocuments();
+
+    const upcomingBatches = await Batch.countDocuments({
+      status: "upcoming",
+    });
+
+    const activeBatches = await Batch.countDocuments({
+      status: "active",
+    });
+
+    const completedBatches = await Batch.countDocuments({
+      status: "completed",
     });
 
     return res.status(200).json({
       success: true,
-      isRegistrationOpen: !!activeBatch,
-      activeBatch: activeBatch || null,
-    });
-  } catch (error) {
-    console.error("Get active registration batch error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error while checking registration status.",
-      error: error.message,
-    });
-  }
-};
-
-// ============================================================
-// 4. TOGGLE REGISTRATION
-// ============================================================
-
-const toggleBatchRegistration = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid batch ID.",
-      });
-    }
-
-    const batch = await Batch.findById(id);
-
-    if (!batch) {
-      return res.status(404).json({
-        success: false,
-        message: "Batch not found.",
-      });
-    }
-
-    const newRegistrationStatus = !batch.isRegistrationOpen;
-
-    // Open registration only for this batch
-    if (newRegistrationStatus === true) {
-      await Batch.updateMany(
-        {
-          _id: { $ne: id },
-          isRegistrationOpen: true,
-        },
-        {
-          $set: {
-            isRegistrationOpen: false,
-          },
-        },
-      );
-    }
-
-    batch.isRegistrationOpen = newRegistrationStatus;
-
-    await batch.save();
-
-    const batches = await Batch.find().sort({
-      createdAt: -1,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: `Registration for "${batch.name}" is now ${
-        newRegistrationStatus ? "OPEN" : "CLOSED"
-      }.`,
-      batch,
-      batches,
-    });
-  } catch (error) {
-    console.error("Toggle registration error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error while updating registration status.",
-      error: error.message,
-    });
-  }
-};
-
-// ============================================================
-// 5. UPDATE BATCH STATUS
-// ============================================================
-
-const updateBatchStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid batch ID.",
-      });
-    }
-
-    if (!["upcoming", "active", "completed"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Status must be 'upcoming', 'active', or 'completed'.",
-      });
-    }
-
-    const batch = await Batch.findById(id);
-
-    if (!batch) {
-      return res.status(404).json({
-        success: false,
-        message: "Batch not found.",
-      });
-    }
-
-    // If making this batch ACTIVE,
-    // complete the previous active batch.
-    if (status === "active") {
-      await Batch.updateMany(
-        {
-          _id: { $ne: id },
-          status: "active",
-        },
-        {
-          $set: {
-            status: "completed",
-            isRegistrationOpen: false,
-          },
-        },
-      );
-    }
-
-    // Completed batches cannot have registration open
-    if (status === "completed") {
-      batch.isRegistrationOpen = false;
-    }
-
-    batch.status = status;
-
-    await batch.save();
-
-    const batches = await Batch.find().sort({
-      createdAt: -1,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: `Batch "${batch.name}" status updated to ${status}.`,
-      batch,
-      batches,
-    });
-  } catch (error) {
-    console.error("Update batch status error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error while updating batch status.",
-      error: error.message,
-    });
-  }
-};
-
-// ============================================================
-// 6. GET DASHBOARD STATISTICS
-// ============================================================
-
-const getBatchDashboardStats = async (req, res) => {
-  try {
-    const allBatches = await Batch.find().sort({
-      createdAt: -1,
-    });
-
-    // Current batch is determined by STATUS,
-    // not registration.
-    const activeBatch =
-      allBatches.find((batch) => batch.status === "active") || null;
-
-    let currentBatchStats = {
-      batch: null,
-      studentCount: 0,
-      femaleStudents: 0,
-      maleStudents: 0,
-      mentorCount: 0,
-      teamCount: 0,
-      applicantCount: 0,
-    };
-
-    if (activeBatch) {
-      const [students, mentors, teams, applicants] = await Promise.all([
-        User.find({
-          role: "student",
-          batch: activeBatch._id,
-        }),
-
-        User.find({
-          role: "mentor",
-        }),
-
-        Team.find({
-          batch: activeBatch._id,
-        }),
-
-        Applicant.find({
-          batch: activeBatch._id,
-        }),
-      ]);
-
-      currentBatchStats = {
-        batch: activeBatch,
-
-        studentCount: students.length,
-
-        femaleStudents: students.filter(
-          (student) => student.gender === "Female",
-        ).length,
-
-        maleStudents: students.filter((student) => student.gender === "Male")
-          .length,
-
-        mentorCount: mentors.length,
-
-        teamCount: teams.length,
-
-        applicantCount: applicants.length,
-      };
-    }
-
-    // ========================================================
-    // BATCH HISTORY
-    // ========================================================
-
-    const batchHistory = await Promise.all(
-      allBatches.map(async (batch) => {
-        const [students, teams] = await Promise.all([
-          User.find({
-            role: "student",
-            batch: batch._id,
-          }),
-
-          Team.find({
-            batch: batch._id,
-          }),
-        ]);
-
-        return {
-          _id: batch._id,
-          name: batch.name,
-          status: batch.status,
-          isRegistrationOpen: batch.isRegistrationOpen,
-          startDate: batch.startDate,
-          endDate: batch.endDate,
-          description: batch.description,
-
-          totalStudents: students.length,
-
-          femaleStudents: students.filter(
-            (student) => student.gender === "Female",
-          ).length,
-
-          maleStudents: students.filter((student) => student.gender === "Male")
-            .length,
-
-          totalTeams: teams.length,
-        };
-      }),
-    );
-
-    // ========================================================
-    // OVERALL STATISTICS
-    // ========================================================
-
-    const [totalStudentsAllTime, totalMentors, totalApplicants] =
-      await Promise.all([
-        User.countDocuments({
-          role: "student",
-        }),
-
-        User.countDocuments({
-          role: "mentor",
-        }),
-
-        Applicant.countDocuments(),
-      ]);
-
-    const previousBatches = batchHistory.filter(
-      (batch) => batch._id.toString() !== activeBatch?._id?.toString(),
-    );
-
-    return res.status(200).json({
-      success: true,
-
-      currentBatch: currentBatchStats,
-
-      previousBatches,
-
-      allBatches: batchHistory,
-
-      overallStats: {
-        totalBatches: allBatches.length,
-        totalStudentsAllTime,
-        totalMentors,
-        totalApplicants,
+      stats: {
+        totalBatches,
+        upcomingBatches,
+        activeBatches,
+        completedBatches,
       },
     });
   } catch (error) {
-    console.error("Get batch dashboard stats error:", error);
+    console.error("Get batch stats error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Server error while fetching batch dashboard statistics.",
+      message: "Server error while fetching batch statistics.",
       error: error.message,
     });
   }
 };
 
-// ============================================================
-// EXPORT
-// ============================================================
+// ======================================================
+// GET ONE BATCH
+// ======================================================
+const getBatchById = async (req, res) => {
+  try {
+    const batch = await Batch.findById(req.params.id);
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      batch,
+    });
+  } catch (error) {
+    console.error("Get batch error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching batch.",
+      error: error.message,
+    });
+  }
+};
+
+// ======================================================
+// UPDATE BATCH
+// ADMIN ONLY
+// ======================================================
+const updateBatch = async (req, res) => {
+  try {
+    const {
+      name,
+      startDate,
+      endDate,
+      status,
+    } = req.body;
+
+    const batch = await Batch.findById(req.params.id);
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found.",
+      });
+    }
+
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Batch name cannot be empty.",
+        });
+      }
+
+      batch.name = name.trim();
+    }
+
+    if (startDate !== undefined) {
+      batch.startDate = startDate;
+    }
+
+    if (endDate !== undefined) {
+      batch.endDate = endDate || null;
+    }
+
+    if (status !== undefined) {
+      if (
+        !["upcoming", "active", "completed"].includes(status)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid batch status.",
+        });
+      }
+
+      batch.status = status;
+    }
+
+    await batch.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Batch updated successfully.",
+      batch,
+    });
+  } catch (error) {
+    console.error("Update batch error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while updating batch.",
+      error: error.message,
+    });
+  }
+};
+
 
 module.exports = {
   createBatch,
   getBatches,
-  getActiveRegistrationBatch,
-  toggleBatchRegistration,
-  updateBatchStatus,
-  getBatchDashboardStats,
+  getBatchStats,
+  getBatchById,
+  updateBatch,
 };

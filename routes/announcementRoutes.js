@@ -1,4 +1,5 @@
 const express = require("express");
+const router = express.Router();
 
 const {
   createAnnouncement,
@@ -11,16 +12,39 @@ const {
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
-const router = express.Router();
+router.post(
+  "/",
+  protect,
+  authorize("admin"),
+  createAnnouncement
+);
 
-router.get("/", protect, getAnnouncements);
+router.get(
+  "/",
+  protect,
+  authorize("admin", "mentor", "student"),
+  getAnnouncements
+);
 
-router.get("/:id", protect, getAnnouncement);
+router.get(
+  "/:id",
+  protect,
+  authorize("admin", "mentor", "student"),
+  getAnnouncement
+);
 
-router.post("/", protect, authorize("admin"), createAnnouncement);
+router.patch(
+  "/:id",
+  protect,
+  authorize("admin"),
+  updateAnnouncement
+);
 
-router.patch("/:id", protect, authorize("admin"), updateAnnouncement);
-
-router.delete("/:id", protect, authorize("admin"), deleteAnnouncement);
+router.delete(
+  "/:id",
+  protect,
+  authorize("admin"),
+  deleteAnnouncement
+);
 
 module.exports = router;

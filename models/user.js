@@ -14,62 +14,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    gender: {
-      type: String,
-      enum: ["Male", "Female"],
-      required: true,
-    },
-
-    batch: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Batch",
-      default: null,
-    },
-
-    phone: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-
-    schoolId: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-  
-    githubUrl: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    leetcodeUrl: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    codeforcesUrl: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    bio: {
-      type: String,
-      default: "",
-      trim: true,
-      maxlength: 300,
-    },
-
-    profileImage: {
-      type: String,
-      default: null,
-    },
-
     email: {
       type: String,
       required: true,
@@ -78,15 +22,14 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    password: {
+      type: String,
+      select: false,
+    },
+
     googleId: {
       type: String,
       default: null,
-    },
-
-    password: {
-      type: String,
-      required: true,
-      select: false,
     },
 
     role: {
@@ -94,20 +37,6 @@ const userSchema = new mongoose.Schema(
       enum: ["admin", "mentor", "student"],
       required: true,
     },
-
-    assignedMentors: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
-
-    assignedStudents: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
 
     status: {
       type: String,
@@ -120,6 +49,59 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
 
+    phone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    bio: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    profileImage: {
+      type: String,
+      default: "",
+    },
+
+    assignedMentor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    // Current batch
+    batch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
+      default: null,
+    },
+
+    // Previous batches
+    batchHistory: [
+      {
+        batch: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Batch",
+          required: true,
+        },
+
+        role: {
+          type: String,
+          enum: ["mentor", "student"],
+          required: true,
+        },
+
+        joinedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+
+    // Password reset
     passwordResetOtp: {
       type: String,
       default: null,
@@ -141,4 +123,5 @@ const userSchema = new mongoose.Schema(
 );
 
 module.exports =
-  mongoose.models.User || mongoose.model("User", userSchema);
+  mongoose.models.User ||
+  mongoose.model("User", userSchema);

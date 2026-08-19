@@ -1,39 +1,58 @@
 const express = require("express");
-const {
-  createBatch,
-  getBatches,
-  getActiveRegistrationBatch,
-  toggleBatchRegistration,
-  updateBatchStatus,
-  getBatchDashboardStats,
-} = require("../controllers/batchController");
-
-const protect = require("../middleware/authMiddleware");
-const authorize = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// Public: Used by Registration page
-router.get("/active-registration", getActiveRegistrationBatch);
+const {
+  createBatch,
+  getBatches,
+  getBatchStats,
+  getBatchById,
+  updateBatch,
+} = require("../controllers/batchController");
 
-// Admin: Get batch dashboard statistics
-router.get("/stats", protect, authorize("admin"), getBatchDashboardStats);
+const protect = require("../middleware/authMiddleware");
+const roleMiddleware = require("../middleware/roleMiddleware");
 
-// Admin: Get list of all batches
-router.get("/", protect, authorize("admin"), getBatches);
+// ======================================================
+// BATCH ROUTES
+// ======================================================
 
-// Admin: Create new batch
-router.post("/", protect, authorize("admin"), createBatch);
-
-// Admin: Toggle registration ON / OFF
-router.patch(
-  "/:id/toggle-registration",
+// Get batch statistics
+// Must be before /:id
+router.get(
+  "/stats",
   protect,
-  authorize("admin"),
-  toggleBatchRegistration,
+  getBatchStats
 );
 
-// Admin: Update batch status
-router.patch("/:id/status", protect, authorize("admin"), updateBatchStatus);
+// Get all batches
+router.get(
+  "/",
+  protect,
+  getBatches
+);
+
+// Get one batch
+router.get(
+  "/:id",
+  protect,
+  getBatchById
+);
+
+// Create batch - ADMIN ONLY
+router.post(
+  "/",
+  protect,
+  roleMiddleware("admin"),
+  createBatch
+);
+
+// Update batch - ADMIN ONLY
+router.patch(
+  "/:id",
+  protect,
+  roleMiddleware("admin"),
+  updateBatch
+);
 
 module.exports = router;
