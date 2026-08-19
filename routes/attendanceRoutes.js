@@ -25,7 +25,7 @@ router.get(
 
 router.post("/mark", protect, authorize("mentor"), markAttendance);
 
-router.get("/my-records", protect, authorize("student"), getStudentAttendance);
+router.get("/my-records", protect, getStudentAttendance);
 
 router.get(
   "/admin-stats",

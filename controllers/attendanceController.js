@@ -3,8 +3,12 @@ const Team = require("../models/team");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
-const stripTime = (d) => {
-  const date = new Date(d);
+const stripTime = (value) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
 
   date.setHours(0, 0, 0, 0);
 
@@ -17,7 +21,6 @@ const isAttended = (status) => {
 
 const calculateStudentRate = (records) => {
   let totalChecks = records.length * 2;
-
   let attendedChecks = 0;
 
   records.forEach((record) => {
@@ -39,7 +42,8 @@ const calculateStudentRate = (records) => {
 
 const markAttendance = async (req, res) => {
   try {
-    const { studentId, date, sessionType, checkType, status } = req.body;
+    const { studentId, date, sessionType, sessionName, checkType, status } =
+      req.body;
 
     const mentorId = req.user._id;
 
@@ -65,12 +69,33 @@ const markAttendance = async (req, res) => {
       });
     }
 
+    if (!["Lecture", "Experience Sharing", "Contest"].includes(sessionType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sessionType",
+      });
+    }
+
     const student = await User.findById(studentId);
 
-    if (!student || student.role !== "student") {
+    if (!student) {
       return res.status(404).json({
         success: false,
         message: "Student not found",
+      });
+    }
+
+    if (student.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Attendance can only be marked for students",
+      });
+    }
+
+    if (!req.user.gender || !student.gender) {
+      return res.status(403).json({
+        success: false,
+        message: "Mentor and student gender information is required",
       });
     }
 
@@ -89,11 +114,11 @@ const markAttendance = async (req, res) => {
     if (!team) {
       return res.status(404).json({
         success: false,
-        message: "Student not assigned to a team",
+        message: "Student is not assigned to a team",
       });
     }
 
-    const isAssignedMentor = team.mentors.some(
+    const isAssignedMentor = (team.mentors || []).some(
       (mentor) => mentor.toString() === mentorId.toString(),
     );
 
@@ -106,8 +131,29 @@ const markAttendance = async (req, res) => {
 
     const attendanceDate = stripTime(date);
 
+    if (!attendanceDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid attendance date",
+      });
+    }
+
+    const finalSessionName = sessionName || sessionType;
+
+    if (
+      !["Lecture 1", "Lecture 2", "Experience Sharing", "Contest"].includes(
+        finalSessionName,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sessionName",
+      });
+    }
+
     let record = await Attendance.findOne({
       studentId,
+      teamId: team._id,
       date: attendanceDate,
       sessionType,
     });
@@ -118,8 +164,16 @@ const markAttendance = async (req, res) => {
         teamId: team._id,
         date: attendanceDate,
         sessionType,
+        sessionName: finalSessionName,
         gender: student.gender,
       });
+    } else {
+      record.teamId = team._id;
+      record.gender = student.gender;
+
+      if (!record.sessionName) {
+        record.sessionName = finalSessionName;
+      }
     }
 
     const checkPayload = {
@@ -146,37 +200,56 @@ const markAttendance = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while marking attendance",
+      error: error.message,
     });
   }
 };
 
 const getMentorStudents = async (req, res) => {
   try {
+    const mentorId = req.user._id;
+    const mentorGender = req.user.gender;
+
+    if (!mentorGender) {
+      return res.status(403).json({
+        success: false,
+        message: "Mentor gender information is required",
+      });
+    }
+
     const team = await Team.findOne({
-      mentors: req.user._id,
+      mentors: mentorId,
     }).populate("students", "firstName lastName schoolId gender email");
 
     if (!team) {
       return res.status(200).json({
         success: true,
         teamName: null,
+        teamId: null,
         students: [],
       });
     }
+
+    const students = (team.students || []).filter(
+      (student) => student.gender === mentorGender,
+    );
 
     return res.status(200).json({
       success: true,
       teamName: team.name,
       teamId: team._id,
-      students: team.students,
+      teamGender: team.gender,
+      mentorGender,
+      students,
     });
   } catch (error) {
     console.error("getMentorStudents error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting mentor students",
+      error: error.message,
     });
   }
 };
@@ -189,6 +262,13 @@ const getTeamRecordsForDate = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "date and sessionType query params are required",
+      });
+    }
+
+    if (!["Lecture", "Experience Sharing", "Contest"].includes(sessionType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sessionType",
       });
     }
 
@@ -205,14 +285,27 @@ const getTeamRecordsForDate = async (req, res) => {
 
     const attendanceDate = stripTime(date);
 
+    if (!attendanceDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid attendance date",
+      });
+    }
+
     const records = await Attendance.find({
       teamId: team._id,
       date: attendanceDate,
       sessionType,
+      gender: req.user.gender,
+    }).sort({
+      createdAt: 1,
     });
 
     return res.status(200).json({
       success: true,
+      teamId: team._id,
+      teamName: team.name,
+      gender: req.user.gender,
       records,
     });
   } catch (error) {
@@ -220,7 +313,8 @@ const getTeamRecordsForDate = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting team attendance records",
+      error: error.message,
     });
   }
 };
@@ -229,9 +323,13 @@ const getStudentAttendance = async (req, res) => {
   try {
     const records = await Attendance.find({
       studentId: req.user._id,
-    }).sort({
-      date: -1,
-    });
+    })
+      .sort({
+        date: -1,
+      })
+      .populate("teamId", "name gender")
+      .populate("firstCheck.markedBy", "firstName lastName email")
+      .populate("secondCheck.markedBy", "firstName lastName email");
 
     const percentage = calculateStudentRate(records);
 
@@ -267,7 +365,9 @@ const getStudentAttendance = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
       records,
+
       percentage,
 
       summary: {
@@ -284,7 +384,8 @@ const getStudentAttendance = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting student attendance",
+      error: error.message,
     });
   }
 };
@@ -452,7 +553,8 @@ const getAdminAttendanceStats = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting attendance statistics",
+      error: error.message,
     });
   }
 };
@@ -557,7 +659,6 @@ const getAdminBatchReport = async (req, res) => {
         _id: student._id,
 
         firstName: student.firstName,
-
         lastName: student.lastName,
 
         fullName:
@@ -565,9 +666,7 @@ const getAdminBatchReport = async (req, res) => {
           `${student.firstName || ""} ${student.lastName || ""}`.trim(),
 
         schoolId: student.schoolId,
-
         gender: student.gender,
-
         email: student.email,
 
         percentage,
@@ -579,15 +678,10 @@ const getAdminBatchReport = async (req, res) => {
 
         summary: {
           totalSessions,
-
           totalChecks: totalSessions * 2,
-
           present,
-
           absent,
-
           late,
-
           excused,
         },
 
@@ -648,11 +742,8 @@ const getAdminBatchReport = async (req, res) => {
         totalPossibleChecks,
 
         totalPresent,
-
         totalAbsent,
-
         totalLate,
-
         totalExcused,
 
         overallAttendanceRate,
@@ -665,7 +756,8 @@ const getAdminBatchReport = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting batch attendance report",
+      error: error.message,
     });
   }
 };
