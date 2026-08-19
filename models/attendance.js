@@ -85,6 +85,7 @@ const attendanceSchema = new mongoose.Schema(
 attendanceSchema.index(
   {
     studentId: 1,
+
     batchId: 1,
     date: 1,
     sessionName: 1,

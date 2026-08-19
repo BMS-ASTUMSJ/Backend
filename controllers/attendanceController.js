@@ -2,10 +2,17 @@ const Attendance = require("../models/attendance");
 const Team = require("../models/team");
 const User = require("../models/user");
 const Batch = require("../models/batch");
+const mongoose = require("mongoose");
 
-const stripTime = (d) => {
-  const date = new Date(d);
+const stripTime = (value) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
   date.setHours(0, 0, 0, 0);
+
   return date;
 };
 
@@ -14,7 +21,7 @@ const isAttended = (status) => {
 };
 
 const calculateStudentRate = (records) => {
-  let totalChecks = records.length * 2;
+  const totalChecks = records.length * 2;
   let attendedChecks = 0;
 
   records.forEach((record) => {
@@ -66,7 +73,7 @@ const markAttendance = async (req, res) => {
     if (!["Lecture", "Experience Sharing", "Contest"].includes(sessionType)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid session type",
+        message: "Invalid sessionType",
       });
     }
 
@@ -77,7 +84,7 @@ const markAttendance = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid session name",
+        message: "Invalid sessionName",
       });
     }
 
@@ -90,10 +97,17 @@ const markAttendance = async (req, res) => {
 
     const student = await User.findById(studentId);
 
-    if (!student || student.role !== "student") {
+    if (!student) {
       return res.status(404).json({
         success: false,
         message: "Student not found",
+      });
+    }
+
+    if (student.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Attendance can only be marked for students",
       });
     }
 
@@ -101,6 +115,13 @@ const markAttendance = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Student is not assigned to a batch",
+      });
+    }
+
+    if (!req.user.gender || !student.gender) {
+      return res.status(403).json({
+        success: false,
+        message: "Mentor and student gender information is required",
       });
     }
 
@@ -119,9 +140,9 @@ const markAttendance = async (req, res) => {
     });
 
     if (!team) {
-      return res.status(403).json({
+      return res.status(404).json({
         success: false,
-        message: "You are not assigned to this student's team",
+        message: "Student is not assigned to your team",
       });
     }
 
@@ -136,10 +157,19 @@ const markAttendance = async (req, res) => {
 
     const attendanceDate = stripTime(date);
 
+    if (!attendanceDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid attendance date",
+      });
+    }
+
     let record = await Attendance.findOne({
       studentId,
       batchId: student.batch,
+      teamId: team._id,
       date: attendanceDate,
+      sessionType,
       sessionName,
     });
 
@@ -155,7 +185,10 @@ const markAttendance = async (req, res) => {
       });
     } else {
       record.teamId = team._id;
+      record.batchId = student.batch;
       record.sessionType = sessionType;
+      record.sessionName = sessionName;
+      record.gender = student.gender;
     }
 
     const checkPayload = {
@@ -182,17 +215,30 @@ const markAttendance = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while marking attendance",
+      error: error.message,
     });
   }
 };
 
 const getMentorStudents = async (req, res) => {
   try {
+    const mentorId = req.user._id;
+    const mentorGender = req.user.gender;
+
+    if (!mentorGender) {
+      return res.status(403).json({
+        success: false,
+        message: "Mentor gender information is required",
+      });
+    }
+
     const team = await Team.findOne({
-      mentors: req.user._id,
-      batch: req.user.batch,
-    }).populate("students", "firstName lastName schoolId gender email batch");
+      mentors: mentorId,
+    }).populate(
+      "students",
+      "firstName lastName fullName schoolId gender email batch",
+    );
 
     if (!team) {
       return res.status(200).json({
@@ -203,18 +249,25 @@ const getMentorStudents = async (req, res) => {
       });
     }
 
+    const students = (team.students || []).filter(
+      (student) => student.gender === mentorGender,
+    );
+
     return res.status(200).json({
       success: true,
       teamName: team.name,
       teamId: team._id,
-      students: team.students,
+      teamGender: team.gender,
+      mentorGender,
+      students,
     });
   } catch (error) {
     console.error("getMentorStudents error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting mentor students",
+      error: error.message,
     });
   }
 };
@@ -223,16 +276,34 @@ const getTeamRecordsForDate = async (req, res) => {
   try {
     const { date, sessionType, sessionName } = req.query;
 
-    if (!date || !sessionType || !sessionName) {
+    if (!date || !sessionType) {
       return res.status(400).json({
         success: false,
-        message: "date, sessionType and sessionName query params are required",
+        message: "date and sessionType query params are required",
+      });
+    }
+
+    if (!["Lecture", "Experience Sharing", "Contest"].includes(sessionType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sessionType",
+      });
+    }
+
+    if (
+      sessionName &&
+      !["Lecture 1", "Lecture 2", "Experience Sharing", "Contest"].includes(
+        sessionName,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sessionName",
       });
     }
 
     const team = await Team.findOne({
       mentors: req.user._id,
-      batch: req.user.batch,
     });
 
     if (!team) {
@@ -244,16 +315,40 @@ const getTeamRecordsForDate = async (req, res) => {
 
     const attendanceDate = stripTime(date);
 
-    const records = await Attendance.find({
+    if (!attendanceDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid attendance date",
+      });
+    }
+
+    const query = {
       teamId: team._id,
-      batchId: req.user.batch,
       date: attendanceDate,
       sessionType,
-      sessionName,
-    }).populate("studentId", "firstName lastName schoolId gender email");
+      gender: req.user.gender,
+    };
+
+    if (sessionName) {
+      query.sessionName = sessionName;
+    }
+
+    const records = await Attendance.find(query)
+      .populate(
+        "studentId",
+        "firstName lastName fullName schoolId gender email",
+      )
+      .populate("firstCheck.markedBy", "firstName lastName email")
+      .populate("secondCheck.markedBy", "firstName lastName email")
+      .sort({
+        createdAt: 1,
+      });
 
     return res.status(200).json({
       success: true,
+      teamId: team._id,
+      teamName: team.name,
+      gender: req.user.gender,
       records,
     });
   } catch (error) {
@@ -261,7 +356,8 @@ const getTeamRecordsForDate = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting team attendance records",
+      error: error.message,
     });
   }
 };
@@ -270,34 +366,48 @@ const getStudentAttendance = async (req, res) => {
   try {
     const { batchId } = req.query;
 
-    let query = {
+    const query = {
       studentId: req.user._id,
     };
 
     if (batchId) {
-      const hasBatchHistory = req.user.batchHistory?.some(
-        (history) =>
-          history.batch && history.batch.toString() === batchId.toString(),
-      );
-
-      if (!hasBatchHistory && req.user.role !== "admin") {
-        return res.status(403).json({
+      if (!mongoose.Types.ObjectId.isValid(batchId)) {
+        return res.status(400).json({
           success: false,
-          message: "You do not have access to this batch's attendance",
+          message: "Invalid batch ID",
         });
       }
 
+      if (req.user.role !== "admin") {
+        const hasBatchHistory = req.user.batchHistory?.some(
+          (history) =>
+            history.batch && history.batch.toString() === batchId.toString(),
+        );
+
+        const isCurrentBatch =
+          req.user.batch && req.user.batch.toString() === batchId.toString();
+
+        if (!hasBatchHistory && !isCurrentBatch) {
+          return res.status(403).json({
+            success: false,
+            message: "You do not have access to this batch's attendance",
+          });
+        }
+      }
+
       query.batchId = batchId;
-    } else {
+    } else if (req.user.batch) {
       query.batchId = req.user.batch;
     }
 
     const records = await Attendance.find(query)
-      .populate("batchId", "name status startDate endDate")
-      .populate("teamId", "name")
       .sort({
         date: -1,
-      });
+      })
+      .populate("batchId", "name status startDate endDate")
+      .populate("teamId", "name gender")
+      .populate("firstCheck.markedBy", "firstName lastName email")
+      .populate("secondCheck.markedBy", "firstName lastName email");
 
     const percentage = calculateStudentRate(records);
 
@@ -335,7 +445,6 @@ const getStudentAttendance = async (req, res) => {
       success: true,
       records,
       percentage,
-
       summary: {
         totalSessions: records.length,
         totalChecks: records.length * 2,
@@ -350,7 +459,8 @@ const getStudentAttendance = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting student attendance",
+      error: error.message,
     });
   }
 };
@@ -397,7 +507,9 @@ const getAdminAttendanceStats = async (req, res) => {
         records.forEach((record) => {
           const date = new Date(record.date).toISOString().slice(0, 10);
 
-          sessionKeys.add(`${date}_${record.sessionName}`);
+          sessionKeys.add(
+            `${date}_${record.sessionName || record.sessionType}`,
+          );
         });
 
         const totalSessions = sessionKeys.size;
@@ -518,7 +630,8 @@ const getAdminAttendanceStats = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting attendance statistics",
+      error: error.message,
     });
   }
 };
@@ -534,7 +647,7 @@ const getAdminBatchReport = async (req, res) => {
       });
     }
 
-    if (!require("mongoose").Types.ObjectId.isValid(batchId)) {
+    if (!mongoose.Types.ObjectId.isValid(batchId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID",
@@ -554,7 +667,7 @@ const getAdminBatchReport = async (req, res) => {
       batch: batchId,
       role: "student",
     })
-      .select("_id firstName lastName schoolId gender email")
+      .select("_id firstName lastName fullName schoolId gender email")
       .sort({
         firstName: 1,
         lastName: 1,
@@ -579,13 +692,15 @@ const getAdminBatchReport = async (req, res) => {
     records.forEach((record) => {
       const date = new Date(record.date).toISOString().slice(0, 10);
 
-      const key = `${date}_${record.sessionName}`;
+      const sessionName = record.sessionName || record.sessionType;
+
+      const key = `${date}_${sessionName}`;
 
       if (!sessionMap.has(key)) {
         sessionMap.set(key, {
           date,
           sessionType: record.sessionType,
-          sessionName: record.sessionName,
+          sessionName: record.sessionName || record.sessionType,
         });
       }
     });
@@ -632,10 +747,15 @@ const getAdminBatchReport = async (req, res) => {
         _id: student._id,
         firstName: student.firstName,
         lastName: student.lastName,
-        fullName: `${student.firstName || ""} ${student.lastName || ""}`.trim(),
+
+        fullName:
+          student.fullName ||
+          `${student.firstName || ""} ${student.lastName || ""}`.trim(),
+
         schoolId: student.schoolId,
         gender: student.gender,
         email: student.email,
+
         percentage,
 
         presentChecks: present,
@@ -719,7 +839,8 @@ const getAdminBatchReport = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Server error while getting batch attendance report",
+      error: error.message,
     });
   }
 };
