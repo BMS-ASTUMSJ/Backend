@@ -17,6 +17,7 @@ const teamRoutes = require("./routes/teamRoutes");
 const announcementRoutes = require("./routes/announcementRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
+const progressRoutes = require("./routes/progressRoutes");
 
 const app = express();
 
@@ -24,23 +25,40 @@ app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
 app.use(express.json());
+
 app.use(cookieParser());
-app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  }),
+);
 
 connectDB();
 
 app.use("/api/auth", authRoutes);
+
 app.use("/api/users", userRoutes);
+
 app.use("/api/batches", batchRoutes);
+
 app.use("/api/applicants", applicantRoutes);
+
 app.use("/api/teams", teamRoutes);
+
 app.use("/api/announcements", announcementRoutes);
+
 app.use("/api/attendance", attendanceRoutes);
+
 app.use("/api/batch-history", batchHistoryRoutes);
+
+app.use("/api/progress", progressRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({

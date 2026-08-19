@@ -53,6 +53,13 @@ const progressContentSchema = new mongoose.Schema(
   },
 );
 
+progressContentSchema.index({
+  batch: 1,
+  type: 1,
+  week: 1,
+  isPublished: 1,
+});
+
 module.exports =
   mongoose.models.ProgressContent ||
   mongoose.model("ProgressContent", progressContentSchema);

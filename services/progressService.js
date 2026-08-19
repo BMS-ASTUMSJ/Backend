@@ -3,6 +3,10 @@ const StudentProgress = require("../models/studentProgress");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
+// ============================================================
+// HELPERS
+// ============================================================
+
 const getStudentBatchIds = async (studentId) => {
   const student = await User.findById(studentId).select("batch batchHistory");
 
@@ -45,21 +49,15 @@ const getStudentCurrentBatch = async (studentId) => {
   return student.batch;
 };
 
-const createProgressContent = async (data) => {
-  const { batch, type, week, title, link, publishedBy } = data;
+// ============================================================
+// 1. CREATE / PUBLISH PROGRESS CONTENT
+// ============================================================
 
-  if (!batch) {
-    throw new Error("Batch is required");
-  }
+const createProgressContent = async (data) => {
+  const { batch, batchId, type, week, title, link, publishedBy } = data;
 
   if (!["cp", "dev"].includes(type)) {
     throw new Error("Invalid progress type. Must be 'cp' or 'dev'.");
-  }
-
-  const batchExists = await Batch.findById(batch);
-
-  if (!batchExists) {
-    throw new Error("Batch not found");
   }
 
   if (!title || !title.trim()) {
@@ -76,8 +74,36 @@ const createProgressContent = async (data) => {
     throw new Error("Week must be a valid number");
   }
 
+  // Support both "batch" and "batchId"
+  let targetBatchId = batch || batchId;
+
+  // If no batch was supplied, use the active batch
+  if (!targetBatchId) {
+    const activeBatch =
+      (await Batch.findOne({ isRegistrationOpen: true })) ||
+      (await Batch.findOne({ status: "active" }));
+
+    if (activeBatch) {
+      targetBatchId = activeBatch._id;
+    }
+  }
+
+  if (!targetBatchId) {
+    throw new Error("Batch is required");
+  }
+
+  const batchExists = await Batch.findById(targetBatchId);
+
+  if (!batchExists) {
+    throw new Error("Batch not found");
+  }
+
+  if (!publishedBy) {
+    throw new Error("Publisher is required");
+  }
+
   return ProgressContent.create({
-    batch,
+    batch: targetBatchId,
     type,
     week: weekNumber,
     title: title.trim(),
@@ -86,6 +112,10 @@ const createProgressContent = async (data) => {
     isPublished: true,
   });
 };
+
+// ============================================================
+// 2. GET PUBLISHED CONTENT
+// ============================================================
 
 const getProgressContent = async (type, week, batchId) => {
   const filter = {
@@ -112,6 +142,10 @@ const getProgressContent = async (type, week, batchId) => {
       createdAt: 1,
     });
 };
+
+// ============================================================
+// 3. GET CONTENT BY ID
+// ============================================================
 
 const getContentById = async (contentId) => {
   const content = await ProgressContent.findById(contentId)
@@ -192,7 +226,7 @@ const updateStudentProgress = async (studentId, contentId, data) => {
 
   const allowedBatches = await getStudentBatchIds(studentId);
 
-  if (!allowedBatches.includes(content.batch.toString())) {
+  if (content.batch && !allowedBatches.includes(content.batch.toString())) {
     throw new Error("You do not have access to this batch");
   }
 
@@ -413,12 +447,14 @@ const getOverallProgress = async (type, week, batchId) => {
   const students = await User.find({
     role: "student",
     batch: batchId,
-  }).select("firstName lastName email gender");
+  }).select("firstName lastName email gender batch");
 
   const results = [];
 
   for (const student of students) {
     const summary = await getStudentSummary(student._id, type, week, batchId);
+
+    const rank = await getStudentRank(student._id, type, week, batchId);
 
     results.push({
       student: {
@@ -430,6 +466,7 @@ const getOverallProgress = async (type, week, batchId) => {
       total: summary.total,
       completed: summary.completed,
       completion: summary.completion,
+      rank: rank.rank,
     });
   }
 
@@ -459,12 +496,14 @@ const getGenderProgress = async (gender, type, week, batchId) => {
     role: "student",
     gender,
     batch: batchId,
-  }).select("firstName lastName email gender");
+  }).select("firstName lastName email gender batch");
 
   const results = [];
 
   for (const student of students) {
     const summary = await getStudentSummary(student._id, type, week, batchId);
+
+    const rank = await getStudentRank(student._id, type, week, batchId);
 
     results.push({
       student: {
@@ -476,6 +515,7 @@ const getGenderProgress = async (gender, type, week, batchId) => {
       total: summary.total,
       completed: summary.completed,
       completion: summary.completion,
+      rank: rank.rank,
     });
   }
 
@@ -531,6 +571,8 @@ const getMentorProgress = async (mentorId, type, week, batchId) => {
       selectedBatch,
     );
 
+    const rank = await getStudentRank(student._id, type, week, selectedBatch);
+
     results.push({
       student: {
         id: student._id,
@@ -541,6 +583,7 @@ const getMentorProgress = async (mentorId, type, week, batchId) => {
       total: summary.total,
       completed: summary.completed,
       completion: summary.completion,
+      rank: rank.rank,
     });
   }
 
@@ -606,6 +649,8 @@ const getProgressDashboard = async (studentId, batchId) => {
       name: `${student.firstName} ${student.lastName}`,
       email: student.email,
       gender: student.gender,
+      currentBatch: student.batch,
+      pastBatches: student.batchHistory || [],
     },
 
     batch,

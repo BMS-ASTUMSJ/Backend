@@ -1,17 +1,20 @@
 const progressService = require("../services/progressService");
+const User = require("../models/user");
 
 const createProgressContent = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Admin access required",
       });
     }
 
+    const publishedBy = req.user._id;
+
     const content = await progressService.createProgressContent({
       ...req.body,
-      publishedBy: req.user._id,
+      publishedBy,
     });
 
     return res.status(201).json({
@@ -20,9 +23,11 @@ const createProgressContent = async (req, res) => {
       data: content,
     });
   } catch (error) {
+    console.error("Create progress content error:", error);
+
     return res.status(400).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to publish progress content",
     });
   }
 };
@@ -52,6 +57,8 @@ const getProgressContent = async (req, res) => {
       data: content,
     });
   } catch (error) {
+    console.error("Get progress content error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -68,6 +75,8 @@ const getContentById = async (req, res) => {
       data: content,
     });
   } catch (error) {
+    console.error("Get content by ID error:", error);
+
     return res.status(404).json({
       success: false,
       message: error.message,
@@ -77,14 +86,31 @@ const getContentById = async (req, res) => {
 
 const getStudentProgress = async (req, res) => {
   try {
-    const studentId = req.user._id;
+    const studentId = req.params.studentId || req.user?._id;
     const { type, week, batchId } = req.query;
+
+    if (!studentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Student ID required",
+      });
+    }
+
+    let selectedBatch = batchId;
+
+    if (
+      req.user.role === "student" &&
+      studentId.toString() === req.user._id.toString() &&
+      !selectedBatch
+    ) {
+      selectedBatch = req.user.batch;
+    }
 
     const progress = await progressService.getStudentProgress(
       studentId,
       type,
       week,
-      batchId,
+      selectedBatch,
     );
 
     return res.status(200).json({
@@ -92,6 +118,8 @@ const getStudentProgress = async (req, res) => {
       data: progress,
     });
   } catch (error) {
+    console.error("Get student progress error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -101,7 +129,14 @@ const getStudentProgress = async (req, res) => {
 
 const updateStudentProgress = async (req, res) => {
   try {
-    const studentId = req.user._id;
+    const studentId = req.params.studentId || req.user?._id;
+
+    if (!studentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Student ID required",
+      });
+    }
 
     const progress = await progressService.updateStudentProgress(
       studentId,
@@ -115,6 +150,8 @@ const updateStudentProgress = async (req, res) => {
       data: progress,
     });
   } catch (error) {
+    console.error("Update student progress error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -124,10 +161,18 @@ const updateStudentProgress = async (req, res) => {
 
 const getStudentSummary = async (req, res) => {
   try {
+    const studentId = req.params.studentId || req.user?._id;
     const { type, week, batchId } = req.query;
 
+    if (!studentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Student ID required",
+      });
+    }
+
     const summary = await progressService.getStudentSummary(
-      req.user._id,
+      studentId,
       type,
       week,
       batchId,
@@ -138,6 +183,8 @@ const getStudentSummary = async (req, res) => {
       data: summary,
     });
   } catch (error) {
+    console.error("Get student summary error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -147,10 +194,18 @@ const getStudentSummary = async (req, res) => {
 
 const getStudentRank = async (req, res) => {
   try {
+    const studentId = req.params.studentId || req.user?._id;
     const { type, week, batchId } = req.query;
 
+    if (!studentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Student ID required",
+      });
+    }
+
     const rank = await progressService.getStudentRank(
-      req.user._id,
+      studentId,
       type,
       week,
       batchId,
@@ -161,6 +216,8 @@ const getStudentRank = async (req, res) => {
       data: rank,
     });
   } catch (error) {
+    console.error("Get student rank error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -170,7 +227,7 @@ const getStudentRank = async (req, res) => {
 
 const getOverallProgress = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Admin access required",
@@ -190,6 +247,8 @@ const getOverallProgress = async (req, res) => {
       data: progress,
     });
   } catch (error) {
+    console.error("Get overall progress error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -199,7 +258,7 @@ const getOverallProgress = async (req, res) => {
 
 const getGenderProgress = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Admin access required",
@@ -221,6 +280,8 @@ const getGenderProgress = async (req, res) => {
       data: progress,
     });
   } catch (error) {
+    console.error("Get gender progress error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -230,14 +291,14 @@ const getGenderProgress = async (req, res) => {
 
 const getMentorProgress = async (req, res) => {
   try {
-    if (req.user.role !== "mentor") {
+    if (!req.user || req.user.role !== "mentor") {
       return res.status(403).json({
         success: false,
         message: "Mentor access required",
       });
     }
 
-    const mentorId = req.user._id;
+    const mentorId = req.params.mentorId || req.user._id;
     const { type, week, batchId } = req.query;
 
     const progress = await progressService.getMentorProgress(
@@ -252,6 +313,8 @@ const getMentorProgress = async (req, res) => {
       data: progress,
     });
   } catch (error) {
+    console.error("Get mentor progress error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -261,10 +324,18 @@ const getMentorProgress = async (req, res) => {
 
 const getProgressDashboard = async (req, res) => {
   try {
+    const studentId = req.params.studentId || req.user?._id;
     const { batchId } = req.query;
 
+    if (!studentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Student ID required",
+      });
+    }
+
     const dashboard = await progressService.getProgressDashboard(
-      req.user._id,
+      studentId,
       batchId,
     );
 
@@ -273,6 +344,8 @@ const getProgressDashboard = async (req, res) => {
       data: dashboard,
     });
   } catch (error) {
+    console.error("Get progress dashboard error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -282,7 +355,7 @@ const getProgressDashboard = async (req, res) => {
 
 const getWeeklyProgress = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Admin access required",
@@ -299,6 +372,8 @@ const getWeeklyProgress = async (req, res) => {
       data: progress,
     });
   } catch (error) {
+    console.error("Get weekly progress error:", error);
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -308,7 +383,7 @@ const getWeeklyProgress = async (req, res) => {
 
 const unpublishProgressContent = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Admin access required",
@@ -325,6 +400,8 @@ const unpublishProgressContent = async (req, res) => {
       data: content,
     });
   } catch (error) {
+    console.error("Unpublish progress content error:", error);
+
     return res.status(404).json({
       success: false,
       message: error.message,
