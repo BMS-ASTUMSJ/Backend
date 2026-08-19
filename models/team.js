@@ -8,18 +8,17 @@ const teamSchema = new mongoose.Schema(
       trim: true,
     },
 
-    gender: {
-      type: String,
-      enum: ["Male", "Female"],
+    batch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
       required: true,
     },
 
-    mentors: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
+    mentor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
     students: [
       {
@@ -27,10 +26,16 @@ const teamSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+    },
   },
   {
     timestamps: true,
   },
 );
 
-module.exports = mongoose.model("Team", teamSchema);
+module.exports = mongoose.models.Team || mongoose.model("Team", teamSchema);
