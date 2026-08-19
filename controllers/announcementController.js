@@ -1,9 +1,24 @@
 const mongoose = require("mongoose");
 const Announcement = require("../models/Announcement");
+const Batch = require("../models/batch");
+
+// ============================================================
+// CREATE ANNOUNCEMENT
+// ============================================================
 
 const createAnnouncement = async (req, res) => {
   try {
-    const { title, body, audience = "all", batch } = req.body;
+    const { title, body, audience = "all", batch, batchId } = req.body;
+
+    // Accept either batch or batchId from frontend
+    const selectedBatch = batch || batchId;
+
+    console.log("CREATE ANNOUNCEMENT BODY:", req.body);
+    console.log("SELECTED BATCH:", selectedBatch);
+
+    // ========================================================
+    // VALIDATE TITLE
+    // ========================================================
 
     if (!title || !title.trim()) {
       return res.status(400).json({
@@ -12,12 +27,20 @@ const createAnnouncement = async (req, res) => {
       });
     }
 
+    // ========================================================
+    // VALIDATE BODY
+    // ========================================================
+
     if (!body || !body.trim()) {
       return res.status(400).json({
         success: false,
         message: "Announcement body is required.",
       });
     }
+
+    // ========================================================
+    // VALIDATE AUDIENCE
+    // ========================================================
 
     if (!["all", "mentor"].includes(audience)) {
       return res.status(400).json({
@@ -26,21 +49,29 @@ const createAnnouncement = async (req, res) => {
       });
     }
 
-    if (!batch) {
+    // ========================================================
+    // VALIDATE BATCH
+    // ========================================================
+
+    if (!selectedBatch) {
       return res.status(400).json({
         success: false,
         message: "Batch is required.",
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(batch)) {
+    if (!mongoose.Types.ObjectId.isValid(selectedBatch)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID.",
       });
     }
 
-    const batchExists = await mongoose.model("Batch").findById(batch);
+    // ========================================================
+    // CHECK BATCH EXISTS
+    // ========================================================
+
+    const batchExists = await Batch.findById(selectedBatch);
 
     if (!batchExists) {
       return res.status(404).json({
@@ -49,20 +80,32 @@ const createAnnouncement = async (req, res) => {
       });
     }
 
+    // ========================================================
+    // CREATE ANNOUNCEMENT
+    // ========================================================
+
     const announcement = await Announcement.create({
       title: title.trim(),
       body: body.trim(),
       audience,
-      batch,
+      batch: selectedBatch,
     });
+
+    // ========================================================
+    // POPULATE BATCH
+    // ========================================================
 
     const populatedAnnouncement = await Announcement.findById(
       announcement._id,
     ).populate("batch", "name");
 
+    // ========================================================
+    // RESPONSE
+    // ========================================================
+
     return res.status(201).json({
       success: true,
-      message: "Announcement created successfully.",
+      message: "Announcement published successfully.",
       announcement: populatedAnnouncement,
     });
   } catch (error) {
@@ -70,11 +113,15 @@ const createAnnouncement = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to create announcement.",
+      message: "Failed to publish announcement.",
       error: error.message,
     });
   }
 };
+
+// ============================================================
+// GET ANNOUNCEMENTS
+// ============================================================
 
 const getAnnouncements = async (req, res) => {
   try {
@@ -89,9 +136,18 @@ const getAnnouncements = async (req, res) => {
 
     let filter = {};
 
+    // ========================================================
+    // ADMIN
+    // ========================================================
+
     if (role === "admin") {
       filter = {};
-    } else if (role === "mentor") {
+    }
+
+    // ========================================================
+    // MENTOR
+    // ========================================================
+    else if (role === "mentor") {
       if (!req.user.batch) {
         return res.status(200).json({
           success: true,
@@ -106,7 +162,12 @@ const getAnnouncements = async (req, res) => {
           $in: ["all", "mentor"],
         },
       };
-    } else if (role === "student") {
+    }
+
+    // ========================================================
+    // STUDENT
+    // ========================================================
+    else if (role === "student") {
       if (!req.user.batch) {
         return res.status(200).json({
           success: true,
@@ -119,7 +180,12 @@ const getAnnouncements = async (req, res) => {
         batch: req.user.batch,
         audience: "all",
       };
-    } else {
+    }
+
+    // ========================================================
+    // INVALID ROLE
+    // ========================================================
+    else {
       return res.status(403).json({
         success: false,
         message: `Invalid user role: ${role}`,
@@ -146,6 +212,10 @@ const getAnnouncements = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// GET SINGLE ANNOUNCEMENT
+// ============================================================
 
 const getAnnouncement = async (req, res) => {
   try {
@@ -177,6 +247,7 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
+    // Admin can see everything
     if (role === "admin") {
       return res.status(200).json({
         success: true,
@@ -184,6 +255,7 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
+    // Other users must have a batch
     if (!req.user.batch) {
       return res.status(403).json({
         success: false,
@@ -191,9 +263,10 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
+    // Check batch
     if (
       !announcement.batch ||
-      announcement.batch._id.toString() !== req.user.batch.toString()
+      String(announcement.batch._id) !== String(req.user.batch)
     ) {
       return res.status(403).json({
         success: false,
@@ -201,6 +274,7 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
+    // Students
     if (role === "student") {
       if (announcement.audience !== "all") {
         return res.status(403).json({
@@ -215,6 +289,7 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
+    // Mentors
     if (role === "mentor") {
       if (!["all", "mentor"].includes(announcement.audience)) {
         return res.status(403).json({
@@ -244,10 +319,17 @@ const getAnnouncement = async (req, res) => {
   }
 };
 
+// ============================================================
+// UPDATE ANNOUNCEMENT
+// ============================================================
+
 const updateAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, body, audience, batch } = req.body;
+
+    const { title, body, audience, batch, batchId } = req.body;
+
+    const selectedBatch = batch || batchId;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -277,21 +359,21 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    if (!batch) {
+    if (!selectedBatch) {
       return res.status(400).json({
         success: false,
         message: "Batch is required.",
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(batch)) {
+    if (!mongoose.Types.ObjectId.isValid(selectedBatch)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID.",
       });
     }
 
-    const batchExists = await mongoose.model("Batch").findById(batch);
+    const batchExists = await Batch.findById(selectedBatch);
 
     if (!batchExists) {
       return res.status(404).json({
@@ -306,7 +388,7 @@ const updateAnnouncement = async (req, res) => {
         title: title.trim(),
         body: body.trim(),
         audience,
-        batch,
+        batch: selectedBatch,
       },
       {
         new: true,
@@ -336,6 +418,10 @@ const updateAnnouncement = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// DELETE ANNOUNCEMENT
+// ============================================================
 
 const deleteAnnouncement = async (req, res) => {
   try {
@@ -371,6 +457,10 @@ const deleteAnnouncement = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   createAnnouncement,

@@ -8,29 +8,38 @@ const teamSchema = new mongoose.Schema(
       trim: true,
     },
 
+    gender: {
+      type: String,
+      enum: ["Male", "Female"],
+      required: true,
+    },
+
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       required: true,
     },
 
-    mentor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
+    mentors: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+      },
+    ],
 
     students: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
+        required: true,
       },
     ],
 
-    description: {
+    projectTitle: {
       type: String,
-      default: "",
       trim: true,
+      default: "",
     },
   },
   {

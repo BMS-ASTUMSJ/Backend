@@ -159,6 +159,10 @@ const getContentById = async (contentId) => {
   return content;
 };
 
+// ============================================================
+// 4. GET STUDENT PROGRESS
+// ============================================================
+
 const getStudentProgress = async (studentId, type, week, batchId) => {
   const allowedBatches = await getStudentBatchIds(studentId);
 
@@ -216,6 +220,10 @@ const getStudentProgress = async (studentId, type, week, batchId) => {
     };
   });
 };
+
+// ============================================================
+// 5. UPDATE STUDENT PROGRESS
+// ============================================================
 
 const updateStudentProgress = async (studentId, contentId, data) => {
   const content = await ProgressContent.findById(contentId);
@@ -290,6 +298,10 @@ const updateStudentProgress = async (studentId, contentId, data) => {
   ).populate("content");
 };
 
+// ============================================================
+// 6. CHECK COMPLETION
+// ============================================================
+
 const isProgressCompleted = (progress, type) => {
   if (!progress) {
     return false;
@@ -313,6 +325,10 @@ const isProgressCompleted = (progress, type) => {
 
   return false;
 };
+
+// ============================================================
+// 7. GET STUDENT SUMMARY
+// ============================================================
 
 const getStudentSummary = async (studentId, type, week, batchId) => {
   const allowedBatches = await getStudentBatchIds(studentId);
@@ -381,6 +397,10 @@ const getStudentSummary = async (studentId, type, week, batchId) => {
   };
 };
 
+// ============================================================
+// 8. GET STUDENT RANK
+// ============================================================
+
 const getStudentRank = async (studentId, type, week, batchId) => {
   const selectedBatch = batchId || (await getStudentCurrentBatch(studentId));
 
@@ -439,6 +459,10 @@ const getStudentRank = async (studentId, type, week, batchId) => {
   };
 };
 
+// ============================================================
+// 9. GET OVERALL PROGRESS
+// ============================================================
+
 const getOverallProgress = async (type, week, batchId) => {
   if (!batchId) {
     throw new Error("Batch ID is required");
@@ -482,6 +506,10 @@ const getOverallProgress = async (type, week, batchId) => {
     return a.student.name.localeCompare(b.student.name);
   });
 };
+
+// ============================================================
+// 10. GET GENDER PROGRESS
+// ============================================================
 
 const getGenderProgress = async (gender, type, week, batchId) => {
   if (!["Male", "Female"].includes(gender)) {
@@ -531,6 +559,10 @@ const getGenderProgress = async (gender, type, week, batchId) => {
     return a.student.name.localeCompare(b.student.name);
   });
 };
+
+// ============================================================
+// 11. GET MENTOR PROGRESS
+// ============================================================
 
 const getMentorProgress = async (mentorId, type, week, batchId) => {
   const mentor = await User.findOne({
@@ -599,6 +631,10 @@ const getMentorProgress = async (mentorId, type, week, batchId) => {
     return a.student.name.localeCompare(b.student.name);
   });
 };
+
+// ============================================================
+// 12. GET STUDENT DASHBOARD
+// ============================================================
 
 const getProgressDashboard = async (studentId, batchId) => {
   const student = await User.findById(studentId).select(
@@ -673,6 +709,10 @@ const getProgressDashboard = async (studentId, batchId) => {
   };
 };
 
+// ============================================================
+// 13. GET WEEKLY PROGRESS
+// ============================================================
+
 const getWeeklyProgress = async (week, batchId) => {
   if (!batchId) {
     throw new Error("Batch ID is required");
@@ -705,6 +745,10 @@ const getWeeklyProgress = async (week, batchId) => {
   return results;
 };
 
+// ============================================================
+// 14. UNPUBLISH CONTENT
+// ============================================================
+
 const unpublishProgressContent = async (contentId) => {
   const content = await ProgressContent.findByIdAndUpdate(
     contentId,
@@ -722,6 +766,10 @@ const unpublishProgressContent = async (contentId) => {
 
   return content;
 };
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   createProgressContent,

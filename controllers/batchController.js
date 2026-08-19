@@ -384,7 +384,7 @@ const updateBatchStatus = async (req, res) => {
     if (!["upcoming", "active", "completed"].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: "Status must be 'upcoming', 'active', or 'completed'.",
+        message: "Batch status must be 'upcoming', 'active', or 'completed'.",
       });
     }
 
@@ -633,7 +633,7 @@ const getBatchStats = async (req, res) => {
 };
 
 // ============================================================
-// GET ONE BATCH
+// GET ONE BATCH WITH STUDENTS AND MENTORS
 // ============================================================
 
 const getBatchById = async (req, res) => {
@@ -656,16 +656,97 @@ const getBatchById = async (req, res) => {
       });
     }
 
+    // ========================================================
+    // FIND STUDENTS
+    // ========================================================
+
+    const students = await User.find({
+      $or: [
+        {
+          role: "student",
+          batch: id,
+        },
+        {
+          batchHistory: {
+            $elemMatch: {
+              batch: id,
+              role: "student",
+            },
+          },
+        },
+      ],
+    })
+      .select(
+        "firstName lastName email role gender phone schoolId bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
+      )
+      .populate("batch", "name startDate endDate status");
+
+    // ========================================================
+    // FIND MENTORS
+    // ========================================================
+
+    const mentors = await User.find({
+      $or: [
+        {
+          role: "mentor",
+          batch: id,
+        },
+        {
+          batchHistory: {
+            $elemMatch: {
+              batch: id,
+              role: "mentor",
+            },
+          },
+        },
+      ],
+    })
+      .select(
+        "firstName lastName email role gender phone bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
+      )
+      .populate("batch", "name startDate endDate status");
+
+    // ========================================================
+    // FIND TEAMS
+    // ========================================================
+
+    const teams = await Team.find({
+      batch: id,
+    });
+
+    // ========================================================
+    // FIND APPLICANTS
+    // ========================================================
+
+    const applicants = await Applicant.find({
+      batch: id,
+    });
+
+    // ========================================================
+    // RETURN EVERYTHING
+    // ========================================================
+
     return res.status(200).json({
       success: true,
+
       batch,
+
+      students,
+      mentors,
+      teams,
+      applicants,
+
+      studentCount: students.length,
+      mentorCount: mentors.length,
+      teamCount: teams.length,
+      applicantCount: applicants.length,
     });
   } catch (error) {
-    console.error("Get batch error:", error);
+    console.error("Get batch details error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Server error while fetching batch.",
+      message: "Server error while fetching batch details.",
       error: error.message,
     });
   }
@@ -678,7 +759,6 @@ const getBatchById = async (req, res) => {
 const updateBatch = async (req, res) => {
   try {
     const { name, startDate, endDate, status } = req.body;
-
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -763,6 +843,10 @@ const updateBatch = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   createBatch,

@@ -47,7 +47,7 @@ const attendanceSchema = new mongoose.Schema(
       status: {
         type: String,
         enum: ["Present", "Absent", "Late", "Excused"],
-        default: "Absent",
+        default: null,
       },
 
       markedBy: {
@@ -64,7 +64,7 @@ const attendanceSchema = new mongoose.Schema(
       status: {
         type: String,
         enum: ["Present", "Absent", "Late", "Excused"],
-        default: "Absent",
+        default: null,
       },
 
       markedBy: {
@@ -85,13 +85,13 @@ const attendanceSchema = new mongoose.Schema(
 attendanceSchema.index(
   {
     studentId: 1,
-
     batchId: 1,
     date: 1,
     sessionName: 1,
   },
   {
     unique: true,
+    name: "student_batch_date_session_unique",
   },
 );
 

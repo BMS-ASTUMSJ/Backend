@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
+// ============================================================
+// MENTOR - GET MY BATCH HISTORY
+// ============================================================
+
 const getMyBatchHistory = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
@@ -44,6 +48,10 @@ const getMyBatchHistory = async (req, res) => {
   }
 };
 
+// ============================================================
+// MENTOR - GET ONE PREVIOUS BATCH
+// ============================================================
+
 const getMyBatch = async (req, res) => {
   try {
     const { batchId } = req.params;
@@ -69,7 +77,7 @@ const getMyBatch = async (req, res) => {
       });
     }
 
-    const historyItem = user.batchHistory.find(
+    const historyItem = (user.batchHistory || []).find(
       (item) => item.batch && item.batch._id.toString() === batchId.toString(),
     );
 
@@ -119,8 +127,6 @@ const getMyBatch = async (req, res) => {
       roleInBatch: historyItem.role,
       joinedAt: historyItem.joinedAt,
 
-      // These will be connected when attendance/progress
-      // schemas are integrated.
       attendance: [],
       progress: [],
       teams: [],
@@ -136,7 +142,110 @@ const getMyBatch = async (req, res) => {
   }
 };
 
+// ============================================================
+// ADMIN - GET ALL BATCHES
+// ============================================================
+
+const getAllBatchesForAdmin = async (req, res) => {
+  try {
+    const batches = await Batch.find({})
+      .select("name status startDate endDate description")
+      .sort({ startDate: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: batches.length,
+      batches,
+    });
+  } catch (error) {
+    console.error("Get all batches error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching batches",
+    });
+  }
+};
+
+// ============================================================
+// ADMIN - GET USERS WHO BELONGED TO A BATCH
+// ============================================================
+
+const getBatchMembersForAdmin = async (req, res) => {
+  try {
+    const { batchId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid batch ID",
+      });
+    }
+
+    const batch = await Batch.findById(batchId)
+      .select("name status startDate endDate description")
+      .lean();
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found",
+      });
+    }
+
+    const users = await User.find({
+      "batchHistory.batch": batchId,
+    })
+      .select(
+        "firstName lastName email role phone schoolId profileImage batch batchHistory",
+      )
+      .lean();
+
+    const members = [];
+
+    users.forEach((user) => {
+      const historyItems = (user.batchHistory || []).filter(
+        (item) => item.batch && item.batch.toString() === batchId.toString(),
+      );
+
+      historyItems.forEach((historyItem) => {
+        members.push({
+          userId: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          currentRole: user.role,
+          roleInBatch: historyItem.role,
+          phone: user.phone,
+          schoolId: user.schoolId,
+          profileImage: user.profileImage,
+          joinedAt: historyItem.joinedAt,
+          isCurrentBatch:
+            user.batch && user.batch.toString() === batchId.toString(),
+        });
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      batch,
+      count: members.length,
+      members,
+    });
+  } catch (error) {
+    console.error("Get batch members error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching batch members",
+    });
+  }
+};
+
 module.exports = {
   getMyBatchHistory,
   getMyBatch,
+  getAllBatchesForAdmin,
+  getBatchMembersForAdmin,
 };

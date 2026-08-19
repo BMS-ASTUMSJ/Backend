@@ -1,5 +1,7 @@
 const express = require("express");
 
+const router = express.Router();
+
 const {
   createTeam,
   getTeams,
@@ -10,33 +12,21 @@ const {
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
-const router = express.Router();
+// Create team
+router.post("/", protect, authorize("admin"), createTeam);
 
-router.post(
-  "/",
-  protect,
-  authorize("admin"),
-  createTeam
-);
+// Get all teams
+router.get("/", protect, authorize("admin", "mentor", "student"), getTeams);
 
-
-router.get(
-  "/",
-  protect,
-  getTeams
-);
-
-
+// Get one team
 router.get(
   "/:id",
   protect,
-  getTeamById
+  authorize("admin", "mentor", "student"),
+  getTeamById,
 );
-router.delete(
-  "/:id",
-  protect,
-  authorize("admin"),
-  deleteTeam
-);
+
+// Delete team
+router.delete("/:id", protect, authorize("admin"), deleteTeam);
 
 module.exports = router;
