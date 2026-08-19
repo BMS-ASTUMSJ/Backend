@@ -20,11 +20,20 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Current Active Batch
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       default: null,
     },
+
+    // Historical batches the user was enrolled in (Supports alumni & past batch access)
+    pastBatches: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Batch",
+      },
+    ],
 
     phone: {
       type: String,
@@ -32,14 +41,14 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-
+    // Student / School ID
     schoolId: {
       type: String,
       default: "",
       trim: true,
     },
 
-  
+    // Coding & Competitive Programming Profiles
     githubUrl: {
       type: String,
       default: "",
@@ -76,6 +85,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      index: true,
     },
 
     googleId: {
@@ -95,6 +105,7 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Mentors assigned to this student (Up to 2 mentors of matching gender)
     assignedMentors: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -102,6 +113,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // Students assigned to this mentor (Of matching gender)
     assignedStudents: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -139,6 +151,9 @@ const userSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Indexes for fast lookup by role, gender, and batch
+userSchema.index({ role: 1, gender: 1, batch: 1 });
 
 module.exports =
   mongoose.models.User || mongoose.model("User", userSchema);
