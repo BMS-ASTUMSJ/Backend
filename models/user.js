@@ -20,19 +20,12 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
-<<<<<<< HEAD
-    // Current batch
-=======
-    // Current Active Batch
->>>>>>> 7a5c0cdc8fed77aac4cade5f4b7d6377e720e622
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       default: null,
     },
 
-<<<<<<< HEAD
-    // Complete batch membership history
     batchHistory: [
       {
         batch: {
@@ -51,13 +44,13 @@ const userSchema = new mongoose.Schema(
           type: Date,
           default: Date.now,
         },
-=======
-    // Historical batches the user was enrolled in (Supports alumni & past batch access)
+      },
+    ],
+
     pastBatches: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Batch",
->>>>>>> 7a5c0cdc8fed77aac4cade5f4b7d6377e720e622
       },
     ],
 
@@ -67,20 +60,12 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-<<<<<<< HEAD
-=======
-    // Student / School ID
->>>>>>> 7a5c0cdc8fed77aac4cade5f4b7d6377e720e622
     schoolId: {
       type: String,
       default: "",
       trim: true,
     },
 
-<<<<<<< HEAD
-=======
-    // Coding & Competitive Programming Profiles
->>>>>>> 7a5c0cdc8fed77aac4cade5f4b7d6377e720e622
     githubUrl: {
       type: String,
       default: "",
@@ -137,7 +122,6 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
-    // Mentors assigned to this student (Up to 2 mentors of matching gender)
     assignedMentors: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -145,7 +129,6 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Students assigned to this mentor (Of matching gender)
     assignedStudents: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -184,12 +167,10 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-<<<<<<< HEAD
-module.exports = mongoose.models.User || mongoose.model("User", userSchema);
-=======
-// Indexes for fast lookup by role, gender, and batch
-userSchema.index({ role: 1, gender: 1, batch: 1 });
+userSchema.index({
+  role: 1,
+  gender: 1,
+  batch: 1,
+});
 
-module.exports =
-  mongoose.models.User || mongoose.model("User", userSchema);
->>>>>>> 7a5c0cdc8fed77aac4cade5f4b7d6377e720e622
+module.exports = mongoose.models.User || mongoose.model("User", userSchema);
