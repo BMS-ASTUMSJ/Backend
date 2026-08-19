@@ -1,8 +1,8 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-
 const { OAuth2Client } = require("google-auth-library");
+
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const User = require("../models/User");
@@ -97,7 +97,6 @@ const login = async (req, res) => {
       success: true,
       message: "Login successful",
       accessToken,
-
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -105,9 +104,7 @@ const login = async (req, res) => {
         email: user.email,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
-
         batch: user.batch,
-
         batchHistory,
       },
     });
@@ -127,7 +124,7 @@ const login = async (req, res) => {
 
 const refreshAccessToken = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken;
+    const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
       return res.status(401).json({
@@ -185,7 +182,7 @@ const refreshAccessToken = async (req, res) => {
 
 const getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id).select("-password");
 
     if (!user) {
       return res.status(404).json({
@@ -198,7 +195,6 @@ const getMe = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -206,9 +202,7 @@ const getMe = async (req, res) => {
         email: user.email,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
-
         batch: user.batch,
-
         batchHistory,
       },
     });
@@ -279,6 +273,14 @@ const changePassword = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Password changed successfully",
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        mustChangePassword: false,
+      },
     });
   } catch (error) {
     console.error("Change password error:", error);
@@ -289,6 +291,57 @@ const changePassword = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// SKIP PASSWORD CHANGE
+// ============================================================
+
+const skipPasswordChange = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (!["student", "mentor"].includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "This action is only available for students and mentors.",
+      });
+    }
+
+    user.mustChangePassword = false;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password change skipped successfully.",
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        mustChangePassword: false,
+      },
+    });
+  } catch (error) {
+    console.error("Skip password change error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// Alias for compatibility with existing routes
+const skipChangePassword = skipPasswordChange;
 
 // ============================================================
 // LOGOUT
@@ -357,7 +410,6 @@ const forgotPassword = async (req, res) => {
     await sendEmail({
       to: user.email,
       subject: "ASTU MSJ Password Reset OTP",
-
       html: `
         <h2>Password Reset Request</h2>
 
@@ -368,9 +420,7 @@ const forgotPassword = async (req, res) => {
           ASTU MSJ Bootcamp Management System password.
         </p>
 
-        <p>
-          Your password reset OTP is:
-        </p>
+        <p>Your password reset OTP is:</p>
 
         <p style="
           font-size: 28px;
@@ -380,18 +430,14 @@ const forgotPassword = async (req, res) => {
           ${otp}
         </p>
 
-        <p>
-          This OTP will expire in 10 minutes.
-        </p>
+        <p>This OTP will expire in 10 minutes.</p>
 
         <p>
           If you did not request this password reset,
           you can safely ignore this email.
         </p>
 
-        <p>
-          ASTU MSJ Bootcamp Management System
-        </p>
+        <p>ASTU MSJ Bootcamp Management System</p>
       `,
     });
 
@@ -516,7 +562,6 @@ const resetPassword = async (req, res) => {
     }
 
     user.password = await bcrypt.hash(newPassword, 12);
-
     user.passwordResetVerified = false;
     user.passwordResetOtp = null;
     user.passwordResetOtpExpires = null;
@@ -612,7 +657,6 @@ const googleLogin = async (req, res) => {
       success: true,
       message: "Google login successful",
       accessToken,
-
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -620,9 +664,7 @@ const googleLogin = async (req, res) => {
         email: user.email,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
-
         batch: user.batch,
-
         batchHistory,
       },
     });
@@ -641,6 +683,8 @@ module.exports = {
   refreshAccessToken,
   getMe,
   changePassword,
+  skipChangePassword,
+  skipPasswordChange,
   logout,
   forgotPassword,
   verifyResetOtp,

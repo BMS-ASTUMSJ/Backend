@@ -1,22 +1,35 @@
 const mongoose = require("mongoose");
-
-const Batch = require("../models/batch");
-const User = require("../models/user");
-const Team = require("../models/team");
-const Applicant = require("../models/applicant");
+const Batch = require("../models/Batch");
+const User = require("../models/User");
+const Team = require("../models/Team");
+const Applicant = require("../models/Applicant");
 
 // ============================================================
-// 1. CREATE BATCH
+// CREATE BATCH
 // ============================================================
 
 const createBatch = async (req, res) => {
   try {
-    const { name, startDate, endDate, description, status } = req.body;
+    const { name, startDate, endDate, status = "upcoming" } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
         message: "Batch name is required.",
+      });
+    }
+
+    if (!startDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Start date is required.",
+      });
+    }
+
+    if (!["upcoming", "active", "completed"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Status must be 'upcoming', 'active', or 'completed'.",
       });
     }
 
@@ -31,16 +44,7 @@ const createBatch = async (req, res) => {
       });
     }
 
-    const batchStatus = status || "upcoming";
-
-    if (!["upcoming", "active", "completed"].includes(batchStatus)) {
-      return res.status(400).json({
-        success: false,
-        message: "Status must be 'upcoming', 'active', or 'completed'.",
-      });
-    }
-
-    if (batchStatus === "active") {
+    if (status === "active") {
       await Batch.updateMany(
         { status: "active" },
         {
@@ -55,10 +59,8 @@ const createBatch = async (req, res) => {
     const batch = await Batch.create({
       name: name.trim(),
       startDate,
-      endDate,
-      description,
-      status: batchStatus,
-      isRegistrationOpen: false,
+      endDate: endDate || null,
+      status,
     });
 
     return res.status(201).json({
@@ -78,18 +80,17 @@ const createBatch = async (req, res) => {
 };
 
 // ============================================================
-// 2. GET ALL BATCHES - ADMIN
+// GET ALL BATCHES
 // ============================================================
 
 const getBatches = async (req, res) => {
   try {
     const batches = await Batch.find().sort({
-      createdAt: -1,
+      startDate: -1,
     });
 
     return res.status(200).json({
       success: true,
-      count: batches.length,
       batches,
     });
   } catch (error) {
@@ -104,13 +105,7 @@ const getBatches = async (req, res) => {
 };
 
 // ============================================================
-// 3. GET MY BATCHES
-//
-// Admin:
-//     gets all batches
-//
-// Student/Mentor:
-//     gets only batches found in batchHistory
+// GET MY BATCHES
 // ============================================================
 
 const getMyBatches = async (req, res) => {
@@ -126,7 +121,6 @@ const getMyBatches = async (req, res) => {
       });
     }
 
-    // Admin can see every batch.
     if (user.role === "admin") {
       const batches = await Batch.find().sort({
         createdAt: -1,
@@ -145,7 +139,6 @@ const getMyBatches = async (req, res) => {
 
     const batchIds = history.map((item) => item.batch).filter(Boolean);
 
-    // Backward compatibility for existing users.
     if (
       user.batch &&
       !batchIds.some((id) => id.toString() === user.batch.toString())
@@ -166,7 +159,6 @@ const getMyBatches = async (req, res) => {
 
       let role = membership?.role || null;
 
-      // Backward compatibility.
       if (!role && user.batch) {
         if (user.batch.toString() === batch._id.toString()) {
           role = user.role === "mentor" ? "mentor" : "student";
@@ -195,7 +187,7 @@ const getMyBatches = async (req, res) => {
 };
 
 // ============================================================
-// 4. GET ONE OF MY BATCHES
+// GET ONE OF MY BATCHES
 // ============================================================
 
 const getMyBatch = async (req, res) => {
@@ -229,7 +221,6 @@ const getMyBatch = async (req, res) => {
       });
     }
 
-    // Admin can access every batch.
     if (user.role === "admin") {
       return res.status(200).json({
         success: true,
@@ -250,7 +241,6 @@ const getMyBatch = async (req, res) => {
       });
     }
 
-    // Backward compatibility.
     if (user.batch && user.batch.toString() === id) {
       return res.status(200).json({
         success: true,
@@ -275,12 +265,13 @@ const getMyBatch = async (req, res) => {
 };
 
 // ============================================================
-// 5. GET ACTIVE REGISTRATION BATCH
+// GET ACTIVE REGISTRATION BATCH
 // ============================================================
 
 const getActiveRegistrationBatch = async (req, res) => {
   try {
     const activeBatch = await Batch.findOne({
+      status: "active",
       isRegistrationOpen: true,
     });
 
@@ -301,7 +292,7 @@ const getActiveRegistrationBatch = async (req, res) => {
 };
 
 // ============================================================
-// 6. TOGGLE REGISTRATION
+// TOGGLE REGISTRATION
 // ============================================================
 
 const toggleBatchRegistration = async (req, res) => {
@@ -324,9 +315,16 @@ const toggleBatchRegistration = async (req, res) => {
       });
     }
 
+    if (batch.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Only an active batch can have registration open.",
+      });
+    }
+
     const newRegistrationStatus = !batch.isRegistrationOpen;
 
-    if (newRegistrationStatus === true) {
+    if (newRegistrationStatus) {
       await Batch.updateMany(
         {
           _id: { $ne: id },
@@ -368,7 +366,7 @@ const toggleBatchRegistration = async (req, res) => {
 };
 
 // ============================================================
-// 7. UPDATE BATCH STATUS
+// UPDATE BATCH STATUS
 // ============================================================
 
 const updateBatchStatus = async (req, res) => {
@@ -414,7 +412,7 @@ const updateBatchStatus = async (req, res) => {
       );
     }
 
-    if (status === "completed") {
+    if (status !== "active") {
       batch.isRegistrationOpen = false;
     }
 
@@ -444,7 +442,7 @@ const updateBatchStatus = async (req, res) => {
 };
 
 // ============================================================
-// 8. GET DASHBOARD STATISTICS
+// GET BATCH DASHBOARD STATISTICS
 // ============================================================
 
 const getBatchDashboardStats = async (req, res) => {
@@ -489,7 +487,6 @@ const getBatchDashboardStats = async (req, res) => {
 
       currentBatchStats = {
         batch: activeBatch,
-
         studentCount: students.length,
 
         femaleStudents: students.filter(
@@ -500,9 +497,7 @@ const getBatchDashboardStats = async (req, res) => {
           .length,
 
         mentorCount: mentors.length,
-
         teamCount: teams.length,
-
         applicantCount: applicants.length,
       };
     }
@@ -591,7 +586,179 @@ const getBatchDashboardStats = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Server error while fetching batch dashboard statistics.",
+      message: "Server error while fetching batch statistics.",
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================
+// GET BATCH STATISTICS
+// ============================================================
+
+const getBatchStats = async (req, res) => {
+  try {
+    const totalBatches = await Batch.countDocuments();
+
+    const upcomingBatches = await Batch.countDocuments({
+      status: "upcoming",
+    });
+
+    const activeBatches = await Batch.countDocuments({
+      status: "active",
+    });
+
+    const completedBatches = await Batch.countDocuments({
+      status: "completed",
+    });
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalBatches,
+        upcomingBatches,
+        activeBatches,
+        completedBatches,
+      },
+    });
+  } catch (error) {
+    console.error("Get batch stats error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching batch statistics.",
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================
+// GET ONE BATCH
+// ============================================================
+
+const getBatchById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid batch ID.",
+      });
+    }
+
+    const batch = await Batch.findById(id);
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      batch,
+    });
+  } catch (error) {
+    console.error("Get batch error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching batch.",
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================
+// UPDATE BATCH
+// ============================================================
+
+const updateBatch = async (req, res) => {
+  try {
+    const { name, startDate, endDate, status } = req.body;
+
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid batch ID.",
+      });
+    }
+
+    const batch = await Batch.findById(id);
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found.",
+      });
+    }
+
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Batch name cannot be empty.",
+        });
+      }
+
+      batch.name = name.trim();
+    }
+
+    if (startDate !== undefined) {
+      batch.startDate = startDate;
+    }
+
+    if (endDate !== undefined) {
+      batch.endDate = endDate || null;
+    }
+
+    if (status !== undefined) {
+      if (!["upcoming", "active", "completed"].includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid batch status.",
+        });
+      }
+
+      if (status === "active") {
+        await Batch.updateMany(
+          {
+            _id: { $ne: id },
+            status: "active",
+          },
+          {
+            $set: {
+              status: "completed",
+              isRegistrationOpen: false,
+            },
+          },
+        );
+      }
+
+      if (status !== "active") {
+        batch.isRegistrationOpen = false;
+      }
+
+      batch.status = status;
+    }
+
+    await batch.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Batch updated successfully.",
+      batch,
+    });
+  } catch (error) {
+    console.error("Update batch error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while updating batch.",
       error: error.message,
     });
   }
@@ -606,4 +773,7 @@ module.exports = {
   toggleBatchRegistration,
   updateBatchStatus,
   getBatchDashboardStats,
+  getBatchStats,
+  getBatchById,
+  updateBatch,
 };

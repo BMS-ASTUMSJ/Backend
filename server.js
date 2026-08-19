@@ -1,4 +1,5 @@
 const dns = require("dns");
+
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 require("dotenv").config();
@@ -18,8 +19,14 @@ const announcementRoutes = require("./routes/announcementRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
 const progressRoutes = require("./routes/progressRoutes");
+const assignmentRoutes = require("./routes/assignmentRoutes");
+const submissionRoutes = require("./routes/submissionRoutes");
 
 const app = express();
+
+// ============================================================
+// CORS
+// ============================================================
 
 app.use(
   cors({
@@ -29,6 +36,10 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
+
+// ============================================================
+// BODY PARSERS
+// ============================================================
 
 app.use(express.json());
 
@@ -40,7 +51,15 @@ app.use(
   }),
 );
 
+// ============================================================
+// DATABASE
+// ============================================================
+
 connectDB();
+
+// ============================================================
+// ROUTES
+// ============================================================
 
 app.use("/api/auth", authRoutes);
 
@@ -54,11 +73,19 @@ app.use("/api/teams", teamRoutes);
 
 app.use("/api/announcements", announcementRoutes);
 
+app.use("/api/assignments", assignmentRoutes);
+
+app.use("/api/submissions", submissionRoutes);
+
 app.use("/api/attendance", attendanceRoutes);
 
 app.use("/api/batch-history", batchHistoryRoutes);
 
 app.use("/api/progress", progressRoutes);
+
+// ============================================================
+// ROOT
+// ============================================================
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -67,12 +94,20 @@ app.get("/", (req, res) => {
   });
 });
 
+// ============================================================
+// 404
+// ============================================================
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: "Route not found",
   });
 });
+
+// ============================================================
+// ERROR HANDLER
+// ============================================================
 
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
@@ -82,6 +117,10 @@ app.use((err, req, res, next) => {
     message: "Internal server error",
   });
 });
+
+// ============================================================
+// SERVER
+// ============================================================
 
 const PORT = process.env.PORT || 5000;
 

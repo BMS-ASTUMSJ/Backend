@@ -1,15 +1,31 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
-const User = require("../models/user");
-const Batch = require("../models/batch");
 const crypto = require("crypto");
+
+const User = require("../models/User");
+const Batch = require("../models/Batch");
+
+let Team;
+let Applicant;
+
+try {
+  Team = require("../models/Team");
+} catch (error) {
+  Team = null;
+}
+
+try {
+  Applicant = require("../models/Applicant");
+} catch (error) {
+  Applicant = null;
+}
 
 let sendEmail;
 
 try {
   const emailService = require("../services/emailService");
   sendEmail = emailService.sendEmail || emailService;
-} catch (e) {
+} catch (error) {
   sendEmail = null;
 }
 
@@ -81,7 +97,6 @@ const createUser = async (req, res) => {
       email: normalizedEmail,
       phone: phone ? phone.trim() : "",
       gender,
-
       batch,
 
       batchHistory: batch
@@ -104,7 +119,6 @@ const createUser = async (req, res) => {
       try {
         await sendEmail({
           to: normalizedEmail,
-
           subject: "Your ASTU MSJ Bootcamp Account",
 
           html: `
@@ -137,14 +151,13 @@ const createUser = async (req, res) => {
           `,
         });
       } catch (emailError) {
-        console.warn("⚠️ Email service failed:", emailError.message);
+        console.warn("Email service failed:", emailError.message);
       }
     }
 
     return res.status(201).json({
       success: true,
       message: `${role} account created successfully.`,
-
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -526,13 +539,16 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const {
-      phone,
-      bio,
       firstName,
       lastName,
+      gender,
+      phone,
+      schoolId,
       githubUrl,
       leetcodeUrl,
       codeforcesUrl,
+      bio,
+      profileImage,
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -544,32 +560,44 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    if (phone !== undefined) {
-      user.phone = phone;
-    }
-
-    if (bio !== undefined) {
-      user.bio = bio;
-    }
-
     if (firstName !== undefined) {
-      user.firstName = firstName;
+      user.firstName = firstName.trim();
     }
 
     if (lastName !== undefined) {
-      user.lastName = lastName;
+      user.lastName = lastName.trim();
+    }
+
+    if (gender !== undefined) {
+      user.gender = gender;
+    }
+
+    if (phone !== undefined) {
+      user.phone = phone.trim();
+    }
+
+    if (schoolId !== undefined) {
+      user.schoolId = schoolId.trim();
     }
 
     if (githubUrl !== undefined) {
-      user.githubUrl = githubUrl;
+      user.githubUrl = githubUrl.trim();
     }
 
     if (leetcodeUrl !== undefined) {
-      user.leetcodeUrl = leetcodeUrl;
+      user.leetcodeUrl = leetcodeUrl.trim();
     }
 
     if (codeforcesUrl !== undefined) {
-      user.codeforcesUrl = codeforcesUrl;
+      user.codeforcesUrl = codeforcesUrl.trim();
+    }
+
+    if (bio !== undefined) {
+      user.bio = bio.trim();
+    }
+
+    if (profileImage !== undefined) {
+      user.profileImage = profileImage;
     }
 
     await user.save();
@@ -651,7 +679,6 @@ const changeUserBatch = async (req, res) => {
       });
     }
 
-    // Update current batch and current role
     user.batch = batch._id;
     user.role = role;
 

@@ -14,18 +14,98 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      index: true,
+    },
+
+    password: {
+      type: String,
+      select: false,
+    },
+
+    googleId: {
+      type: String,
+      default: null,
+    },
+
+    role: {
+      type: String,
+      enum: ["admin", "mentor", "student"],
+      required: true,
+    },
+
+    status: {
+      type: String,
+      enum: ["approved", "suspended"],
+      default: "approved",
+    },
+
+    mustChangePassword: {
+      type: Boolean,
+      default: true,
+    },
+
     gender: {
       type: String,
       enum: ["Male", "Female"],
       required: true,
     },
 
+    phone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    schoolId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    bio: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 300,
+    },
+
+    profileImage: {
+      type: String,
+      default: "",
+    },
+
+    githubUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    leetcodeUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    codeforcesUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    // Current batch
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       default: null,
     },
 
+    // User's previous/current batch history
     batchHistory: [
       {
         batch: {
@@ -47,6 +127,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // Kept for backward compatibility
     pastBatches: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -54,74 +135,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    phone: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    schoolId: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    githubUrl: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    leetcodeUrl: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    codeforcesUrl: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    bio: {
-      type: String,
-      default: "",
-      trim: true,
-      maxlength: 300,
-    },
-
-    profileImage: {
-      type: String,
-      default: null,
-    },
-
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-      index: true,
-    },
-
-    googleId: {
-      type: String,
-      default: null,
-    },
-
-    password: {
-      type: String,
-      required: true,
-      select: false,
-    },
-
-    role: {
-      type: String,
-      enum: ["admin", "mentor", "student"],
-      required: true,
-    },
-
+    // Mentor assigned to a student
     assignedMentors: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -129,6 +143,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // Students assigned to a mentor
     assignedStudents: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -136,17 +151,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    status: {
-      type: String,
-      enum: ["approved", "suspended"],
-      default: "approved",
-    },
-
-    mustChangePassword: {
-      type: Boolean,
-      default: true,
-    },
-
+    // Password reset
     passwordResetOtp: {
       type: String,
       default: null,

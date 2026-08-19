@@ -9,6 +9,9 @@ const {
   toggleBatchRegistration,
   updateBatchStatus,
   getBatchDashboardStats,
+  getBatchStats,
+  getBatchById,
+  updateBatch,
 } = require("../controllers/batchController");
 
 const protect = require("../middleware/authMiddleware");
@@ -20,34 +23,43 @@ const router = express.Router();
 // PUBLIC
 // ============================================================
 
-// Used by Registration page
+// Registration page
 router.get("/active-registration", getActiveRegistrationBatch);
 
 // ============================================================
 // LOGGED-IN USER
 // ============================================================
 
-// Student/Mentor:
-// only batches where they have a membership.
-//
-// Admin:
-// all batches.
+// Admin: all batches
+// Student/Mentor: their batch history
 router.get("/my-batches", protect, getMyBatches);
 
-// Get one batch that belongs to the logged-in user.
+// Get one batch accessible to current user
 router.get("/my-batches/:id", protect, getMyBatch);
 
 // ============================================================
-// ADMIN
+// ADMIN - STATISTICS
 // ============================================================
 
-// Get batch dashboard statistics
-router.get("/stats", protect, authorize("admin"), getBatchDashboardStats);
+// Detailed dashboard statistics
+router.get(
+  "/dashboard-stats",
+  protect,
+  authorize("admin"),
+  getBatchDashboardStats,
+);
 
-// Get list of all batches
+// Simple batch statistics
+router.get("/stats", protect, authorize("admin"), getBatchStats);
+
+// ============================================================
+// ADMIN - BATCH MANAGEMENT
+// ============================================================
+
+// Get all batches
 router.get("/", protect, authorize("admin"), getBatches);
 
-// Create new batch
+// Create batch
 router.post("/", protect, authorize("admin"), createBatch);
 
 // Toggle registration
@@ -60,5 +72,14 @@ router.patch(
 
 // Update batch status
 router.patch("/:id/status", protect, authorize("admin"), updateBatchStatus);
+
+// Update batch
+router.patch("/:id", protect, authorize("admin"), updateBatch);
+
+// ============================================================
+// GET ONE BATCH
+// ============================================================
+
+router.get("/:id", protect, getBatchById);
 
 module.exports = router;

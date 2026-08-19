@@ -3,7 +3,7 @@ const Announcement = require("../models/Announcement");
 
 const createAnnouncement = async (req, res) => {
   try {
-    const { title, body, audience = "all" } = req.body;
+    const { title, body, audience = "all", batch } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({
@@ -22,7 +22,30 @@ const createAnnouncement = async (req, res) => {
     if (!["all", "mentor"].includes(audience)) {
       return res.status(400).json({
         success: false,
-        message: "Audience must be either all or mentor.",
+        message: "Audience must be all or mentor.",
+      });
+    }
+
+    if (!batch) {
+      return res.status(400).json({
+        success: false,
+        message: "Batch is required.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(batch)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid batch ID.",
+      });
+    }
+
+    const batchExists = await mongoose.model("Batch").findById(batch);
+
+    if (!batchExists) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found.",
       });
     }
 
@@ -30,12 +53,17 @@ const createAnnouncement = async (req, res) => {
       title: title.trim(),
       body: body.trim(),
       audience,
+      batch,
     });
+
+    const populatedAnnouncement = await Announcement.findById(
+      announcement._id,
+    ).populate("batch", "name");
 
     return res.status(201).json({
       success: true,
       message: "Announcement created successfully.",
-      announcement,
+      announcement: populatedAnnouncement,
     });
   } catch (error) {
     console.error("CREATE ANNOUNCEMENT ERROR:", error);
@@ -43,7 +71,7 @@ const createAnnouncement = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to create announcement.",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error: error.message,
     });
   }
 };
@@ -57,28 +85,49 @@ const getAnnouncements = async (req, res) => {
       });
     }
 
+    const role = String(req.user.role || "").toLowerCase();
+
     let filter = {};
 
-    if (req.user.role === "student") {
+    if (role === "admin") {
+      filter = {};
+    } else if (role === "mentor") {
+      if (!req.user.batch) {
+        return res.status(200).json({
+          success: true,
+          count: 0,
+          announcements: [],
+        });
+      }
+
       filter = {
-        audience: "all",
-      };
-    } else if (req.user.role === "mentor") {
-      filter = {
+        batch: req.user.batch,
         audience: {
           $in: ["all", "mentor"],
         },
       };
-    } else if (req.user.role === "admin") {
-      filter = {};
+    } else if (role === "student") {
+      if (!req.user.batch) {
+        return res.status(200).json({
+          success: true,
+          count: 0,
+          announcements: [],
+        });
+      }
+
+      filter = {
+        batch: req.user.batch,
+        audience: "all",
+      };
     } else {
       return res.status(403).json({
         success: false,
-        message: "Invalid user role.",
+        message: `Invalid user role: ${role}`,
       });
     }
 
     const announcements = await Announcement.find(filter)
+      .populate("batch", "name")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -93,14 +142,22 @@ const getAnnouncements = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch announcements.",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error: error.message,
     });
   }
 };
 
 const getAnnouncement = async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated.",
+      });
+    }
+
     const { id } = req.params;
+    const role = String(req.user.role || "").toLowerCase();
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -109,14 +166,9 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: "Not authenticated.",
-      });
-    }
-
-    const announcement = await Announcement.findById(id);
+    const announcement = await Announcement.findById(id)
+      .populate("batch", "name")
+      .lean();
 
     if (!announcement) {
       return res.status(404).json({
@@ -125,33 +177,61 @@ const getAnnouncement = async (req, res) => {
       });
     }
 
-    if (req.user.role === "student" && announcement.audience !== "all") {
+    if (role === "admin") {
+      return res.status(200).json({
+        success: true,
+        announcement,
+      });
+    }
+
+    if (!req.user.batch) {
       return res.status(403).json({
         success: false,
-        message: "You are not allowed to view this announcement.",
+        message: "You are not assigned to a batch.",
       });
     }
 
     if (
-      req.user.role === "mentor" &&
-      !["all", "mentor"].includes(announcement.audience)
+      !announcement.batch ||
+      announcement.batch._id.toString() !== req.user.batch.toString()
     ) {
       return res.status(403).json({
         success: false,
-        message: "You are not allowed to view this announcement.",
+        message: "You are not authorized to view this announcement.",
       });
     }
 
-    if (!["student", "mentor", "admin"].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: "Invalid user role.",
+    if (role === "student") {
+      if (announcement.audience !== "all") {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to view this announcement.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        announcement,
       });
     }
 
-    return res.status(200).json({
-      success: true,
-      announcement,
+    if (role === "mentor") {
+      if (!["all", "mentor"].includes(announcement.audience)) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to view this announcement.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        announcement,
+      });
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: "Invalid user role.",
     });
   } catch (error) {
     console.error("GET SINGLE ANNOUNCEMENT ERROR:", error);
@@ -159,6 +239,7 @@ const getAnnouncement = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch announcement.",
+      error: error.message,
     });
   }
 };
@@ -166,7 +247,7 @@ const getAnnouncement = async (req, res) => {
 const updateAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, body, audience } = req.body;
+    const { title, body, audience, batch } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -192,7 +273,30 @@ const updateAnnouncement = async (req, res) => {
     if (!["all", "mentor"].includes(audience)) {
       return res.status(400).json({
         success: false,
-        message: "Audience must be either all or mentor.",
+        message: "Audience must be all or mentor.",
+      });
+    }
+
+    if (!batch) {
+      return res.status(400).json({
+        success: false,
+        message: "Batch is required.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(batch)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid batch ID.",
+      });
+    }
+
+    const batchExists = await mongoose.model("Batch").findById(batch);
+
+    if (!batchExists) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found.",
       });
     }
 
@@ -202,12 +306,13 @@ const updateAnnouncement = async (req, res) => {
         title: title.trim(),
         body: body.trim(),
         audience,
+        batch,
       },
       {
         new: true,
         runValidators: true,
       },
-    );
+    ).populate("batch", "name");
 
     if (!announcement) {
       return res.status(404).json({
@@ -227,6 +332,7 @@ const updateAnnouncement = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to update announcement.",
+      error: error.message,
     });
   }
 };
@@ -261,6 +367,7 @@ const deleteAnnouncement = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to delete announcement.",
+      error: error.message,
     });
   }
 };

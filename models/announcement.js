@@ -20,10 +20,22 @@ const announcementSchema = new mongoose.Schema(
       default: "all",
       required: true,
     },
+
+    // Current batch
+    batch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
+      required: true,
+    },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.model("Announcement", announcementSchema);
+// Useful for fetching announcements for a batch
+announcementSchema.index({ batch: 1, createdAt: -1 });
+
+module.exports =
+  mongoose.models.Announcement ||
+  mongoose.model("Announcement", announcementSchema);
