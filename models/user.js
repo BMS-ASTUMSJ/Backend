@@ -105,7 +105,7 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    // User's previous/current batch history
+  
     batchHistory: [
       {
         batch: {

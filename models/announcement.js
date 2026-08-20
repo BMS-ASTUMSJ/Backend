@@ -16,25 +16,25 @@ const announcementSchema = new mongoose.Schema(
 
     audience: {
       type: String,
-      enum: ["all", "mentor"],
-      default: "all",
+      enum: ["all", "mentor", "assigned_students"],
       required: true,
     },
 
-    // Current batch
-    batch: {
+    createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Batch",
+      ref: "User",
       required: true,
+    },
+
+    edited: {
+      type: Boolean,
+      default: false,
     },
   },
   {
     timestamps: true,
   }
 );
-
-// Useful for fetching announcements for a batch
-announcementSchema.index({ batch: 1, createdAt: -1 });
 
 module.exports =
   mongoose.models.Announcement ||
