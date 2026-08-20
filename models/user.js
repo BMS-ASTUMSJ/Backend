@@ -76,8 +76,20 @@ const userSchema = new mongoose.Schema(
     },
 
     profileImage: {
-      type: String,
-      default: "",
+      url: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      publicId: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      profileImagePublicId: {
+        type: String,
+        default: null,
+      },
     },
 
     githubUrl: {
@@ -98,14 +110,12 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Current batch
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       default: null,
     },
 
-    // User's previous/current batch history
     batchHistory: [
       {
         batch: {
@@ -127,7 +137,6 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Kept for backward compatibility
     pastBatches: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -135,7 +144,6 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Mentor assigned to a student
     assignedMentors: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -143,7 +151,6 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Students assigned to a mentor
     assignedStudents: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -151,7 +158,6 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Password reset
     passwordResetOtp: {
       type: String,
       default: null,

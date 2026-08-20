@@ -1,10 +1,11 @@
-const Applicant = require("../models/applicant");
+// const Applicant = require("../models/applicant");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 
 let sendEmail;
+
 try {
   const emailService = require("../services/emailService");
   sendEmail = emailService.sendEmail || emailService;
@@ -54,15 +55,19 @@ const registerApplicant = async (req, res) => {
 
     if (!agreedToRules) {
       return res.status(400).json({
+        success: false,
         message: "You must agree to the bootcamp rules",
       });
     }
 
     let targetBatch;
+
     if (batchId) {
       targetBatch = await Batch.findById(batchId);
     } else {
-      targetBatch = await Batch.findOne({ isRegistrationOpen: true });
+      targetBatch = await Batch.findOne({
+        isRegistrationOpen: true,
+      });
     }
 
     if (!targetBatch) {
@@ -82,16 +87,18 @@ const registerApplicant = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    let applicant = await Applicant.findOne({ email: normalizedEmail });
+    const existingApplicant = await Applicant.findOne({
+      email: normalizedEmail,
+    });
 
-    if (applicant) {
+    if (existingApplicant) {
       return res.status(409).json({
         success: false,
         message: "This email is already registered as an applicant",
       });
     }
 
-    applicant = await Applicant.create({
+    const applicant = await Applicant.create({
       fullName: fullName.trim(),
       email: normalizedEmail,
       phone: phone.trim(),
@@ -115,6 +122,7 @@ const registerApplicant = async (req, res) => {
     });
   } catch (error) {
     console.error("Registration error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error during registration",
@@ -123,15 +131,23 @@ const registerApplicant = async (req, res) => {
   }
 };
 
-// 2. GET APPLICANTS
 const getApplicants = async (req, res) => {
   try {
     const { gender, batchId, status } = req.query;
 
     const filter = {};
-    if (gender) filter.gender = gender;
-    if (batchId) filter.batch = batchId;
-    if (status) filter.status = status;
+
+    if (gender) {
+      filter.gender = gender;
+    }
+
+    if (batchId) {
+      filter.batch = batchId;
+    }
+
+    if (status) {
+      filter.status = status;
+    }
 
     const applicants = await Applicant.find(filter)
       .populate("batch", "name isRegistrationOpen")
@@ -144,6 +160,7 @@ const getApplicants = async (req, res) => {
     });
   } catch (error) {
     console.error("Get applicants error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while getting applicants",
@@ -175,6 +192,7 @@ const updateApplicantStatus = async (req, res) => {
 
     if (status === "rejected") {
       applicant.status = "rejected";
+
       await applicant.save();
 
       return res.status(200).json({
@@ -186,12 +204,13 @@ const updateApplicantStatus = async (req, res) => {
 
     const normalizedEmail = applicant.email.toLowerCase().trim();
 
-    let user = await User.findOne({ email: normalizedEmail });
-
-    let temporaryPassword = null;
+    let user = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (user) {
       applicant.status = "passed";
+
       await applicant.save();
 
       return res.status(200).json({
@@ -212,16 +231,19 @@ const updateApplicantStatus = async (req, res) => {
           batch: user.batch,
           role: user.role,
         },
+        emailSent: false,
       });
     }
 
     const nameParts = (applicant.fullName || "Student User")
       .trim()
       .split(/\s+/);
+
     const firstName = nameParts[0] || "Student";
     const lastName = nameParts.slice(1).join(" ") || firstName;
 
-    temporaryPassword = crypto.randomBytes(4).toString("hex") + "Aa1!";
+    const temporaryPassword = crypto.randomBytes(4).toString("hex") + "Aa1!";
+
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
     user = await User.create({
@@ -242,7 +264,10 @@ const updateApplicantStatus = async (req, res) => {
     });
 
     applicant.status = "passed";
+
     await applicant.save();
+
+    let emailSent = false;
 
     if (sendEmail && typeof sendEmail === "function") {
       try {
@@ -259,14 +284,18 @@ const updateApplicantStatus = async (req, res) => {
             <p>ASTU MSJ Bootcamp Management System</p>
           `,
         });
+
+        emailSent = true;
       } catch (emailErr) {
-        console.warn("⚠️ Email service failed:", emailErr.message);
+        console.warn("Email service failed:", emailErr.message);
       }
     }
 
     return res.status(200).json({
       success: true,
-      message: "Applicant accepted and student account created successfully",
+      message: emailSent
+        ? "Applicant accepted and student account created successfully. The temporary password has been sent to the student's email."
+        : "Applicant accepted and student account created successfully, but the temporary password could not be sent to the student's email.",
       applicant,
       student: {
         id: user._id,
@@ -280,12 +309,13 @@ const updateApplicantStatus = async (req, res) => {
         gender: user.gender,
         batch: user.batch,
         role: user.role,
-        temporaryPassword,
         mustChangePassword: user.mustChangePassword,
       },
+      emailSent,
     });
   } catch (error) {
     console.error("Update applicant status error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while updating applicant status",

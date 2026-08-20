@@ -5,12 +5,18 @@ const { OAuth2Client } = require("google-auth-library");
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const User = require("../models/User");
+const User = require("../models/user");
 const { sendEmail } = require("../services/emailService");
 
-// ============================================================
-// HELPER
-// ============================================================
+const allowedRoles = ["student", "mentor", "admin"];
+
+const isAllowedRole = (role) => {
+  return allowedRoles.includes(String(role || "").toLowerCase());
+};
+
+const isApprovedUser = (user) => {
+  return user && String(user.status || "").toLowerCase() === "approved";
+};
 
 const getUserBatchHistory = async (user) => {
   await user.populate({
@@ -21,9 +27,54 @@ const getUserBatchHistory = async (user) => {
   return user.batchHistory || [];
 };
 
-// ============================================================
-// LOGIN
-// ============================================================
+const createAccessToken = (user) => {
+  return jwt.sign(
+    {
+      userId: user._id,
+      role: user.role,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "1d",
+    },
+  );
+};
+
+const createRefreshToken = (user) => {
+  return jwt.sign(
+    {
+      userId: user._id,
+    },
+    process.env.JWT_REFRESH_SECRET,
+    {
+      expiresIn: "7d",
+    },
+  );
+};
+
+const setRefreshCookie = (res, refreshToken) => {
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+};
+
+const getSafeUser = async (user) => {
+  const batchHistory = await getUserBatchHistory(user);
+
+  return {
+    id: user._id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    role: user.role,
+    mustChangePassword: user.mustChangePassword,
+    batch: user.batch,
+    batchHistory,
+  };
+};
 
 const login = async (req, res) => {
   try {
@@ -36,8 +87,10 @@ const login = async (req, res) => {
       });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     const user = await User.findOne({
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
     }).select("+password");
 
     if (!user) {
@@ -47,10 +100,24 @@ const login = async (req, res) => {
       });
     }
 
-    if (user.status !== "approved") {
+    if (!isApprovedUser(user)) {
       return res.status(403).json({
         success: false,
-        message: "Your account is suspended",
+        message: "Your account is not approved.",
+      });
+    }
+
+    if (!isAllowedRole(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "This account type is not allowed to log in.",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(401).json({
+        success: false,
+        message: "Password authentication is not available for this account.",
       });
     }
 
@@ -63,50 +130,18 @@ const login = async (req, res) => {
       });
     }
 
-    const accessToken = jwt.sign(
-      {
-        userId: user._id,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "1d",
-      },
-    );
+    const accessToken = createAccessToken(user);
+    const refreshToken = createRefreshToken(user);
 
-    const refreshToken = jwt.sign(
-      {
-        userId: user._id,
-      },
-      process.env.JWT_REFRESH_SECRET,
-      {
-        expiresIn: "7d",
-      },
-    );
+    setRefreshCookie(res, refreshToken);
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    const batchHistory = await getUserBatchHistory(user);
+    const safeUser = await getSafeUser(user);
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
       accessToken,
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role,
-        mustChangePassword: user.mustChangePassword,
-        batch: user.batch,
-        batchHistory,
-      },
+      user: safeUser,
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -117,10 +152,6 @@ const login = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// REFRESH ACCESS TOKEN
-// ============================================================
 
 const refreshAccessToken = async (req, res) => {
   try {
@@ -144,23 +175,21 @@ const refreshAccessToken = async (req, res) => {
       });
     }
 
-    if (user.status !== "approved") {
+    if (!isApprovedUser(user)) {
       return res.status(403).json({
         success: false,
-        message: "Your account is suspended",
+        message: "Your account is not approved.",
       });
     }
 
-    const newAccessToken = jwt.sign(
-      {
-        userId: user._id,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "15m",
-      },
-    );
+    if (!isAllowedRole(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "This account type is not allowed.",
+      });
+    }
+
+    const newAccessToken = createAccessToken(user);
 
     return res.status(200).json({
       success: true,
@@ -176,10 +205,6 @@ const refreshAccessToken = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET CURRENT USER
-// ============================================================
-
 const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("-password");
@@ -191,20 +216,25 @@ const getMe = async (req, res) => {
       });
     }
 
-    const batchHistory = await getUserBatchHistory(user);
+    if (!isApprovedUser(user)) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is not approved.",
+      });
+    }
+
+    if (!isAllowedRole(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "This account type is not allowed.",
+      });
+    }
+
+    const safeUser = await getSafeUser(user);
 
     return res.status(200).json({
       success: true,
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role,
-        mustChangePassword: user.mustChangePassword,
-        batch: user.batch,
-        batchHistory,
-      },
+      user: safeUser,
     });
   } catch (error) {
     console.error("Get current user error:", error);
@@ -215,10 +245,6 @@ const getMe = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// CHANGE PASSWORD
-// ============================================================
 
 const changePassword = async (req, res) => {
   try {
@@ -231,7 +257,7 @@ const changePassword = async (req, res) => {
       });
     }
 
-    if (newPassword.length < 8) {
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
       return res.status(400).json({
         success: false,
         message: "New password must be at least 8 characters",
@@ -244,6 +270,27 @@ const changePassword = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "User not found",
+      });
+    }
+
+    if (!isApprovedUser(user)) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is not approved.",
+      });
+    }
+
+    if (!isAllowedRole(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to change your password.",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is not available for this account.",
       });
     }
 
@@ -292,10 +339,6 @@ const changePassword = async (req, res) => {
   }
 };
 
-// ============================================================
-// SKIP PASSWORD CHANGE
-// ============================================================
-
 const skipPasswordChange = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -307,10 +350,17 @@ const skipPasswordChange = async (req, res) => {
       });
     }
 
-    if (!["student", "mentor"].includes(user.role)) {
+    if (!isApprovedUser(user)) {
       return res.status(403).json({
         success: false,
-        message: "This action is only available for students and mentors.",
+        message: "Your account is not approved.",
+      });
+    }
+
+    if (!isAllowedRole(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "This action is not available for your account.",
       });
     }
 
@@ -340,12 +390,7 @@ const skipPasswordChange = async (req, res) => {
   }
 };
 
-// Alias for compatibility with existing routes
 const skipChangePassword = skipPasswordChange;
-
-// ============================================================
-// LOGOUT
-// ============================================================
 
 const logout = async (req, res) => {
   try {
@@ -369,10 +414,6 @@ const logout = async (req, res) => {
   }
 };
 
-// ============================================================
-// FORGOT PASSWORD
-// ============================================================
-
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -388,12 +429,23 @@ const forgotPassword = async (req, res) => {
 
     const user = await User.findOne({
       email: normalizedEmail,
+      status: "approved",
+      role: {
+        $in: ["student", "mentor", "admin"],
+      },
     });
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User with this email does not exist.",
+        message: "No approved account was found with this email.",
+      });
+    }
+
+    if (!isApprovedUser(user) || !isAllowedRole(user.role)) {
+      return res.status(404).json({
+        success: false,
+        message: "No approved account was found with this email.",
       });
     }
 
@@ -412,31 +464,12 @@ const forgotPassword = async (req, res) => {
       subject: "ASTU MSJ Password Reset OTP",
       html: `
         <h2>Password Reset Request</h2>
-
         <p>Hello ${user.firstName},</p>
-
-        <p>
-          We received a request to reset your
-          ASTU MSJ Bootcamp Management System password.
-        </p>
-
+        <p>We received a request to reset your ASTU MSJ Bootcamp Management System password.</p>
         <p>Your password reset OTP is:</p>
-
-        <p style="
-          font-size: 28px;
-          font-weight: bold;
-          letter-spacing: 5px;
-        ">
-          ${otp}
-        </p>
-
+        <p style="font-size:28px;font-weight:bold;letter-spacing:5px;">${otp}</p>
         <p>This OTP will expire in 10 minutes.</p>
-
-        <p>
-          If you did not request this password reset,
-          you can safely ignore this email.
-        </p>
-
+        <p>If you did not request this password reset, you can safely ignore this email.</p>
         <p>ASTU MSJ Bootcamp Management System</p>
       `,
     });
@@ -455,10 +488,6 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// ============================================================
-// VERIFY RESET OTP
-// ============================================================
-
 const verifyResetOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -470,7 +499,7 @@ const verifyResetOtp = async (req, res) => {
       });
     }
 
-    if (!/^\d{6}$/.test(otp)) {
+    if (!/^\d{6}$/.test(String(otp))) {
       return res.status(400).json({
         success: false,
         message: "OTP must be a 6-digit number",
@@ -479,17 +508,24 @@ const verifyResetOtp = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+    const hashedOtp = crypto
+      .createHash("sha256")
+      .update(String(otp))
+      .digest("hex");
 
     const user = await User.findOne({
       email: normalizedEmail,
+      status: "approved",
+      role: {
+        $in: ["student", "mentor", "admin"],
+      },
       passwordResetOtp: hashedOtp,
       passwordResetOtpExpires: {
         $gt: Date.now(),
       },
     });
 
-    if (!user) {
+    if (!user || !isApprovedUser(user) || !isAllowedRole(user.role)) {
       return res.status(400).json({
         success: false,
         message: "Invalid or expired OTP",
@@ -516,10 +552,6 @@ const verifyResetOtp = async (req, res) => {
   }
 };
 
-// ============================================================
-// RESET PASSWORD
-// ============================================================
-
 const resetPassword = async (req, res) => {
   try {
     const { email, newPassword } = req.body;
@@ -531,7 +563,7 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    if (newPassword.length < 8) {
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
       return res.status(400).json({
         success: false,
         message: "New password must be at least 8 characters",
@@ -542,13 +574,24 @@ const resetPassword = async (req, res) => {
 
     const user = await User.findOne({
       email: normalizedEmail,
+      status: "approved",
+      role: {
+        $in: ["student", "mentor", "admin"],
+      },
       passwordResetVerified: true,
     }).select("+password");
 
-    if (!user) {
+    if (!user || !isApprovedUser(user) || !isAllowedRole(user.role)) {
       return res.status(400).json({
         success: false,
         message: "OTP verification is required before resetting your password",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Password reset is not available for this account.",
       });
     }
 
@@ -582,10 +625,6 @@ const resetPassword = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// GOOGLE LOGIN
-// ============================================================
 
 const googleLogin = async (req, res) => {
   try {
@@ -628,10 +667,17 @@ const googleLogin = async (req, res) => {
       });
     }
 
-    if (user.status !== "approved") {
+    if (!isApprovedUser(user)) {
       return res.status(403).json({
         success: false,
-        message: "Your account is suspended",
+        message: "Your account is not approved.",
+      });
+    }
+
+    if (!isAllowedRole(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "This account type is not allowed to log in.",
       });
     }
 
@@ -640,33 +686,18 @@ const googleLogin = async (req, res) => {
       await user.save();
     }
 
-    const accessToken = jwt.sign(
-      {
-        userId: user._id,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "1d",
-      },
-    );
+    const accessToken = createAccessToken(user);
+    const refreshToken = createRefreshToken(user);
 
-    const batchHistory = await getUserBatchHistory(user);
+    setRefreshCookie(res, refreshToken);
+
+    const safeUser = await getSafeUser(user);
 
     return res.status(200).json({
       success: true,
       message: "Google login successful",
       accessToken,
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role,
-        mustChangePassword: user.mustChangePassword,
-        batch: user.batch,
-        batchHistory,
-      },
+      user: safeUser,
     });
   } catch (error) {
     console.error("Google login error:", error);

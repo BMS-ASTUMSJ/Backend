@@ -2,14 +2,14 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 
-const User = require("../models/User");
-const Batch = require("../models/Batch");
+const User = require("../models/user");
+const Batch = require("../models/batch");
 
 let Team;
 let Applicant;
 
 try {
-  Team = require("../models/Team");
+  Team = require("../models/team");
 } catch (error) {
   Team = null;
 }

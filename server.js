@@ -1,7 +1,3 @@
-const dns = require("dns");
-
-dns.setServers(["8.8.8.8", "8.8.4.4"]);
-
 require("dotenv").config();
 
 const express = require("express");
@@ -12,6 +8,7 @@ const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
+
 const batchRoutes = require("./routes/batchRoutes");
 const applicantRoutes = require("./routes/applicantRoutes");
 const teamRoutes = require("./routes/teamRoutes");
@@ -21,16 +18,29 @@ const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const assignmentRoutes = require("./routes/assignmentRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
+const sessionRoutes = require("./routes/sessionRoutes");
 
 const app = express();
 
 // ============================================================
-// CORS
+// CORS CONFIGURATION
 // ============================================================
+
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "http://localhost:5173",
+  "http://localhost:3000",
+].filter(Boolean);
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, or Postman)
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -42,49 +52,35 @@ app.use(
 // ============================================================
 
 app.use(express.json());
-
 app.use(cookieParser());
-
-app.use(
-  express.urlencoded({
-    extended: true,
-  }),
-);
+app.use(express.urlencoded({ extended: true }));
 
 // ============================================================
-// DATABASE
+// DATABASE CONNECTION
 // ============================================================
 
 connectDB();
 
 // ============================================================
-// ROUTES
+// API ROUTES
 // ============================================================
 
 app.use("/api/auth", authRoutes);
-
 app.use("/api/users", userRoutes);
-
+app.use("/api/profile", require("./routes/profileRoutes"));
 app.use("/api/batches", batchRoutes);
-
 app.use("/api/applicants", applicantRoutes);
-
 app.use("/api/teams", teamRoutes);
-
 app.use("/api/announcements", announcementRoutes);
-
 app.use("/api/assignments", assignmentRoutes);
-
 app.use("/api/submissions", submissionRoutes);
-
 app.use("/api/attendance", attendanceRoutes);
-
+app.use("/api/sessions", sessionRoutes);
 app.use("/api/batch-history", batchHistoryRoutes);
-
 app.use("/api/progress", progressRoutes);
 
 // ============================================================
-// ROOT
+// ROOT & HEALTH CHECK
 // ============================================================
 
 app.get("/", (req, res) => {
@@ -95,31 +91,33 @@ app.get("/", (req, res) => {
 });
 
 // ============================================================
-// 404
+// 404 HANDLER
 // ============================================================
 
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "Route not found",
+    message: `Route not found - ${req.originalUrl}`,
   });
 });
 
 // ============================================================
-// ERROR HANDLER
+// GLOBAL ERROR HANDLER
 // ============================================================
 
 app.use((err, req, res, next) => {
-  console.error("Server error:", err);
+  console.error("Server Error:", err.stack || err);
 
-  res.status(500).json({
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
     success: false,
-    message: "Internal server error",
+    message: err.message || "Internal server error",
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
   });
 });
 
 // ============================================================
-// SERVER
+// SERVER INITIALIZATION
 // ============================================================
 
 const PORT = process.env.PORT || 5000;
