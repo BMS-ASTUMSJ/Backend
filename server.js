@@ -7,8 +7,15 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
+const path = require("path");
+
+const multer = require("multer");
 
 const connectDB = require("./config/db");
+
+// ============================================================
+// ROUTES
+// ============================================================
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -16,11 +23,15 @@ const batchRoutes = require("./routes/batchRoutes");
 const applicantRoutes = require("./routes/applicantRoutes");
 const teamRoutes = require("./routes/teamRoutes");
 const announcementRoutes = require("./routes/announcementRoutes");
-const attendanceRoutes = require("./routes/attendanceRoutes");
+const attendanceRoutes = require("./routes/attendanceRoute");
 const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const assignmentRoutes = require("./routes/assignmentRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
+
+// ============================================================
+// APP
+// ============================================================
 
 const app = express();
 
@@ -50,6 +61,15 @@ app.use(
     extended: true,
   }),
 );
+
+// ============================================================
+// STATIC FILES
+// ============================================================
+
+// Assignment uploaded files
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+app.use("/api/at-risk", require("./routes/atRiskRoutes"));
 
 // ============================================================
 // DATABASE
@@ -106,15 +126,62 @@ app.use((req, res) => {
 });
 
 // ============================================================
-// ERROR HANDLER
+// GLOBAL ERROR HANDLER
+// MUST COME AFTER ALL ROUTES
 // ============================================================
 
 app.use((err, req, res, next) => {
-  console.error("Server error:", err);
+  console.error("SERVER ERROR:", err);
 
-  res.status(500).json({
+  // ==========================================================
+  // MULTER ERRORS
+  // ==========================================================
+
+  if (err instanceof multer.MulterError) {
+    // File too large
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "Each uploaded file must not be larger than 20 MB.",
+      });
+    }
+
+    // Too many files
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Too many files uploaded. You can upload a maximum of 10 files.",
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: err.message || "File upload error.",
+    });
+  }
+
+  // ==========================================================
+  // CUSTOM FILE TYPE ERROR
+  // ==========================================================
+
+  if (
+    err.message?.includes("Unsupported file type") ||
+    err.message?.includes("Invalid file type")
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  }
+
+  // ==========================================================
+  // GENERAL ERROR
+  // ==========================================================
+
+  return res.status(500).json({
     success: false,
-    message: "Internal server error",
+    message: err.message || "Internal server error.",
   });
 });
 

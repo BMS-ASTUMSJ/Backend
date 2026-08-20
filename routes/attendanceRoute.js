@@ -2,43 +2,46 @@ const express = require("express");
 
 const router = express.Router();
 
-const {
-  markAttendance,
-  getMentorStudents,
-  getTeamRecordsForDate,
-  getStudentAttendance,
-  getAdminAttendanceStats,
-  getAdminBatchReport,
-} = require("../controllers/attendanceController");
+const attendanceController = require("../controllers/attendanceController");
 
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
-router.get("/my-team", protect, authorize("mentor"), getMentorStudents);
+router.get(
+  "/my-team",
+  protect,
+  authorize("mentor"),
+  attendanceController.getMentorStudents,
+);
 
 router.get(
   "/team-records",
   protect,
   authorize("mentor"),
-  getTeamRecordsForDate,
+  attendanceController.getTeamRecordsForSession,
 );
 
-router.post("/mark", protect, authorize("mentor"), markAttendance);
+router.post(
+  "/mark",
+  protect,
+  authorize("mentor"),
+  attendanceController.markAttendance,
+);
 
-router.get("/my-records", protect, getStudentAttendance);
+router.get("/my-records", protect, attendanceController.getStudentAttendance);
 
 router.get(
   "/admin-stats",
   protect,
   authorize("admin"),
-  getAdminAttendanceStats,
+  attendanceController.getAdminAttendanceStats,
 );
 
 router.get(
   "/admin-report/:batchId",
   protect,
   authorize("admin"),
-  getAdminBatchReport,
+  attendanceController.getAdminBatchReport,
 );
 
 module.exports = router;
