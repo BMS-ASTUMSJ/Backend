@@ -86,10 +86,6 @@ const userSchema = new mongoose.Schema(
         default: "",
         trim: true,
       },
-      profileImagePublicId: {
-        type: String,
-        default: null,
-      },
     },
 
     githubUrl: {
