@@ -1,5 +1,15 @@
 const mongoose = require("mongoose");
 
+const TOPICS = [
+  "HTML / CSS",
+  "JavaScript",
+  "React",
+  "Node.js",
+  "Express.js",
+  "MongoDB",
+  "Git / GitHub",
+];
+
 const progressContentSchema = new mongoose.Schema(
   {
     batch: {
@@ -12,6 +22,12 @@ const progressContentSchema = new mongoose.Schema(
       type: String,
       enum: ["cp", "dev"],
       required: true,
+    },
+
+    topic: {
+      type: String,
+      enum: TOPICS,
+      default: "JavaScript",
     },
 
     week: {
@@ -48,14 +64,13 @@ const progressContentSchema = new mongoose.Schema(
       default: true,
     },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
 progressContentSchema.index({
   batch: 1,
   type: 1,
+  topic: 1,
   week: 1,
   isPublished: 1,
 });
