@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
+    // ============================================================
+    // BASIC INFORMATION
+    // ============================================================
+
     firstName: {
       type: String,
       required: true,
@@ -33,6 +37,10 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ============================================================
+    // ROLE & STATUS
+    // ============================================================
+
     role: {
       type: String,
       enum: ["admin", "mentor", "student"],
@@ -50,11 +58,19 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
 
+    // ============================================================
+    // GENDER
+    // ============================================================
+
     gender: {
       type: String,
       enum: ["Male", "Female"],
       required: true,
     },
+
+    // ============================================================
+    // CONTACT INFORMATION
+    // ============================================================
 
     phone: {
       type: String,
@@ -67,6 +83,10 @@ const userSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+
+    // ============================================================
+    // PROFILE
+    // ============================================================
 
     bio: {
       type: String,
@@ -98,14 +118,20 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Current batch
+    // ============================================================
+    // CURRENT BATCH
+    // ============================================================
+
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       default: null,
     },
 
-    // User's previous/current batch history
+    // ============================================================
+    // BATCH HISTORY
+    // ============================================================
+
     batchHistory: [
       {
         batch: {
@@ -127,7 +153,10 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Kept for backward compatibility
+    // ============================================================
+    // OLD / BACKWARD COMPATIBILITY
+    // ============================================================
+
     pastBatches: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -135,7 +164,11 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Mentor assigned to a student
+    // ============================================================
+    // MENTOR / STUDENT ASSIGNMENTS
+    // ============================================================
+
+    // Students have their assigned mentors
     assignedMentors: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -143,7 +176,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Students assigned to a mentor
+    // Mentors have their assigned students
     assignedStudents: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -151,7 +184,26 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Password reset
+    // ============================================================
+    // AT RISK
+    // ============================================================
+
+    /*
+      This is only used for the mentor/student side.
+
+      false = normal student
+      true  = student is at risk
+    */
+
+    atRisk: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ============================================================
+    // PASSWORD RESET
+    // ============================================================
+
     passwordResetOtp: {
       type: String,
       default: null,
@@ -172,10 +224,33 @@ const userSchema = new mongoose.Schema(
   },
 );
 
+// ============================================================
+// INDEXES
+// ============================================================
+
 userSchema.index({
   role: 1,
   gender: 1,
   batch: 1,
 });
+
+userSchema.index({
+  role: 1,
+  assignedStudents: 1,
+});
+
+userSchema.index({
+  role: 1,
+  assignedMentors: 1,
+});
+
+userSchema.index({
+  role: 1,
+  atRisk: 1,
+});
+
+// ============================================================
+// EXPORT
+// ============================================================
 
 module.exports = mongoose.models.User || mongoose.model("User", userSchema);

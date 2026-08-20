@@ -113,6 +113,9 @@ const createUser = async (req, res) => {
       status: "approved",
       role,
       mustChangePassword: true,
+
+      // New At-Risk field
+      atRisk: false,
     });
 
     if (sendEmail && typeof sendEmail === "function") {
@@ -167,6 +170,7 @@ const createUser = async (req, res) => {
         role: user.role,
         batch: user.batch,
         batchHistory: user.batchHistory,
+        atRisk: user.atRisk,
         temporaryPassword,
       },
     });
@@ -320,6 +324,7 @@ const assignMentor = async (req, res) => {
 
 // ============================================================
 // GET STUDENTS
+// ADMIN ONLY
 // ============================================================
 
 const getStudents = async (req, res) => {
@@ -374,6 +379,7 @@ const getStudents = async (req, res) => {
 
 // ============================================================
 // GET MENTORS
+// ADMIN ONLY
 // ============================================================
 
 const getMentors = async (req, res) => {
@@ -405,7 +411,10 @@ const getMentors = async (req, res) => {
 
     const mentors = await User.find(filter)
       .select("-password")
-      .populate("assignedStudents", "firstName lastName email gender phone")
+      .populate(
+        "assignedStudents",
+        "firstName lastName email gender phone atRisk",
+      )
       .populate("batch", "name status startDate endDate")
       .sort({
         createdAt: -1,
@@ -422,6 +431,107 @@ const getMentors = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error fetching mentors",
+    });
+  }
+};
+
+// ============================================================
+// GET MY STUDENTS
+// MENTOR ONLY
+// ============================================================
+
+const getMyStudents = async (req, res) => {
+  try {
+    if (req.user.role !== "mentor") {
+      return res.status(403).json({
+        success: false,
+        message: "Only mentors can access assigned students",
+      });
+    }
+
+    const mentor = await User.findById(req.user._id).select("assignedStudents");
+
+    if (!mentor) {
+      return res.status(404).json({
+        success: false,
+        message: "Mentor not found",
+      });
+    }
+
+    const studentIds = mentor.assignedStudents || [];
+
+    const students = await User.find({
+      _id: { $in: studentIds },
+      role: "student",
+    })
+      .select("-password")
+      .populate("batch", "name status startDate endDate")
+      .populate("assignedMentors", "firstName lastName email gender phone")
+      .sort({
+        firstName: 1,
+        lastName: 1,
+      });
+
+    return res.status(200).json({
+      success: true,
+      count: students.length,
+      students,
+    });
+  } catch (error) {
+    console.error("Get my students error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching assigned students",
+    });
+  }
+};
+
+// ============================================================
+// GET MY AT-RISK STATUS
+// STUDENT ONLY
+// ============================================================
+
+const getMyRiskStatus = async (req, res) => {
+  try {
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can access their own risk status",
+      });
+    }
+
+    const student = await User.findById(req.user._id).select(
+      "_id firstName lastName email role atRisk",
+    );
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+
+      atRisk: Boolean(student.atRisk),
+
+      student: {
+        _id: student._id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        email: student.email,
+        role: student.role,
+        atRisk: Boolean(student.atRisk),
+      },
+    });
+  } catch (error) {
+    console.error("Get my risk status error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching risk status",
     });
   }
 };
@@ -735,6 +845,13 @@ module.exports = {
   assignMentor,
   getStudents,
   getMentors,
+
+  // AT-RISK / MENTOR
+  getMyStudents,
+
+  // AT-RISK / STUDENT
+  getMyRiskStatus,
+
   deleteUser,
   getBlacklistedUsers,
   getProfile,
