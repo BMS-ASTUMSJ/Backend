@@ -1,14 +1,101 @@
+const mongoose = require("mongoose");
+
 const ProgressContent = require("../models/progressContent");
 const StudentProgress = require("../models/studentProgress");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
-// ============================================================
-// HELPERS
-// ============================================================
+// ======================================================
+// CONSTANTS
+// ======================================================
+
+const TOPICS = [
+  "HTML / CSS",
+  "JavaScript",
+  "React",
+  "Node.js",
+  "Express.js",
+  "MongoDB",
+  "Git / GitHub",
+];
+
+const STATUSES = [
+  "not_started",
+  "in_progress",
+  "done",
+  "needs_help",
+];
+
+// ======================================================
+// STATUS NORMALIZER
+// ======================================================
+
+const normalizeStatus = (status) => {
+  if (!status) {
+    return null;
+  }
+
+  const value = String(status).trim();
+
+  const statusMap = {
+    "Not Started": "not_started",
+    "not started": "not_started",
+    not_started: "not_started",
+
+    "In Progress": "in_progress",
+    "in progress": "in_progress",
+    in_progress: "in_progress",
+
+    Completed: "done",
+    completed: "done",
+    Done: "done",
+    done: "done",
+
+    "Needs Improvement": "needs_help",
+    "needs improvement": "needs_help",
+    needs_improvement: "needs_help",
+
+    "Needs Help": "needs_help",
+    "needs help": "needs_help",
+    needs_help: "needs_help",
+  };
+
+  return statusMap[value] || null;
+};
+
+const displayStatus = (status) => {
+  const normalized = normalizeStatus(status);
+
+  const statusMap = {
+    not_started: "Not Started",
+    in_progress: "In Progress",
+    done: "Completed",
+    needs_help: "Needs Improvement",
+  };
+
+  return statusMap[normalized] || status || "Not Started";
+};
+
+// ======================================================
+// VALIDATE OBJECT ID
+// ======================================================
+
+const validateObjectId = (id, name) => {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    throw new Error(`Invalid ${name}`);
+  }
+
+  return new mongoose.Types.ObjectId(id);
+};
+
+// ======================================================
+// GET STUDENT BATCH IDS
+// ======================================================
 
 const getStudentBatchIds = async (studentId) => {
-  const student = await User.findById(studentId).select("batch batchHistory");
+  const student = await User.findById(studentId).select(
+    "batch batchHistory"
+  );
 
   if (!student) {
     throw new Error("Student not found");
@@ -20,91 +107,123 @@ const getStudentBatchIds = async (studentId) => {
     batchIds.push(student.batch.toString());
   }
 
-  if (Array.isArray(student.batchHistory)) {
-    student.batchHistory.forEach((history) => {
-      if (history.batch) {
-        const id = history.batch.toString();
-
-        if (!batchIds.includes(id)) {
-          batchIds.push(id);
-        }
-      }
-    });
+  for (const history of student.batchHistory || []) {
+    if (
+      history.batch &&
+      !batchIds.includes(history.batch.toString())
+    ) {
+      batchIds.push(history.batch.toString());
+    }
   }
 
   return batchIds;
 };
 
-const getStudentCurrentBatch = async (studentId) => {
-  const student = await User.findById(studentId).select("batch role");
+// ======================================================
+// GET SELECTED STUDENT BATCH
+// ======================================================
 
-  if (!student) {
-    throw new Error("User not found");
+const getSelectedStudentBatch = async (
+  studentId,
+  batchId
+) => {
+  const batches = await getStudentBatchIds(studentId);
+
+  const selectedBatch = batchId || batches[0];
+
+  if (!selectedBatch) {
+    throw new Error(
+      "No batch assigned to this student"
+    );
   }
 
-  if (!student.batch) {
-    throw new Error("No batch assigned to this user");
+  if (!batches.includes(selectedBatch.toString())) {
+    throw new Error(
+      "You do not have access to this batch"
+    );
   }
 
-  return student.batch;
+  return selectedBatch;
 };
 
-// ============================================================
-// 1. CREATE / PUBLISH PROGRESS CONTENT
-// ============================================================
+// ======================================================
+// COMPLETION CHECK
+// ======================================================
 
-const createProgressContent = async (data) => {
-  const { batch, batchId, type, week, title, link, publishedBy } = data;
-
-  if (!["cp", "dev"].includes(type)) {
-    throw new Error("Invalid progress type. Must be 'cp' or 'dev'.");
+const isCompleted = (progress) => {
+  if (!progress) {
+    return false;
   }
 
-  if (!title || !title.trim()) {
+  const status = normalizeStatus(progress.status);
+
+  return Boolean(
+    status === "done" ||
+      progress.completedAt ||
+      progress.watched ||
+      progress.submissionLink
+  );
+};
+
+// ======================================================
+// CREATE CONTENT
+// ======================================================
+
+const createProgressContent = async (data) => {
+  const {
+    batch,
+    batchId,
+    type,
+    topic,
+    week,
+    title,
+    link,
+    publishedBy,
+  } = data;
+
+  if (!["cp", "dev"].includes(type)) {
+    throw new Error("Type must be cp or dev");
+  }
+
+  if (!TOPICS.includes(topic)) {
+    throw new Error("Invalid topic");
+  }
+
+  if (!title?.trim()) {
     throw new Error("Title is required");
   }
 
-  if (!link || !link.trim()) {
+  if (!link?.trim()) {
     throw new Error("Link is required");
   }
 
-  const weekNumber = Number(week);
+  const targetBatch = batch || batchId;
 
-  if (!Number.isInteger(weekNumber) || weekNumber < 1) {
-    throw new Error("Week must be a valid number");
-  }
-
-  // Support both "batch" and "batchId"
-  let targetBatchId = batch || batchId;
-
-  // If no batch was supplied, use the active batch
-  if (!targetBatchId) {
-    const activeBatch =
-      (await Batch.findOne({ isRegistrationOpen: true })) ||
-      (await Batch.findOne({ status: "active" }));
-
-    if (activeBatch) {
-      targetBatchId = activeBatch._id;
-    }
-  }
-
-  if (!targetBatchId) {
+  if (!targetBatch) {
     throw new Error("Batch is required");
   }
 
-  const batchExists = await Batch.findById(targetBatchId);
+  validateObjectId(targetBatch, "batch ID");
+
+  const batchExists = await Batch.findById(targetBatch);
 
   if (!batchExists) {
     throw new Error("Batch not found");
   }
 
-  if (!publishedBy) {
-    throw new Error("Publisher is required");
+  const weekNumber = Number(week);
+
+  if (
+    !Number.isInteger(weekNumber) ||
+    weekNumber < 1
+  ) {
+    throw new Error("Week must be a valid number");
   }
 
   return ProgressContent.create({
-    batch: targetBatchId,
+    batch: targetBatch,
     type,
+    topic,
     week: weekNumber,
     title: title.trim(),
     link: link.trim(),
@@ -113,11 +232,16 @@ const createProgressContent = async (data) => {
   });
 };
 
-// ============================================================
-// 2. GET PUBLISHED CONTENT
-// ============================================================
+// ======================================================
+// GET PROGRESS CONTENT
+// ======================================================
 
-const getProgressContent = async (type, week, batchId) => {
+const getProgressContent = async (
+  type,
+  week,
+  batchId,
+  topic
+) => {
   const filter = {
     isPublished: true,
   };
@@ -130,27 +254,42 @@ const getProgressContent = async (type, week, batchId) => {
     filter.type = type;
   }
 
+  if (topic && topic !== "all") {
+    filter.topic = topic;
+  }
+
   if (week && week !== "all") {
     filter.week = Number(week);
   }
 
   return ProgressContent.find(filter)
-    .populate("publishedBy", "firstName lastName email")
-    .populate("batch", "name status startDate endDate")
+    .populate("batch", "name status")
+    .populate(
+      "publishedBy",
+      "firstName lastName email"
+    )
     .sort({
+      type: 1,
       week: 1,
       createdAt: 1,
     });
 };
 
-// ============================================================
-// 3. GET CONTENT BY ID
-// ============================================================
+// ======================================================
+// GET CONTENT BY ID
+// ======================================================
 
 const getContentById = async (contentId) => {
-  const content = await ProgressContent.findById(contentId)
-    .populate("publishedBy", "firstName lastName email")
-    .populate("batch", "name status startDate endDate");
+  validateObjectId(contentId, "content ID");
+
+  const content = await ProgressContent.findById(
+    contentId
+  )
+    .populate("batch", "name status")
+    .populate(
+      "publishedBy",
+      "firstName lastName email"
+    );
 
   if (!content) {
     throw new Error("Progress content not found");
@@ -159,630 +298,1047 @@ const getContentById = async (contentId) => {
   return content;
 };
 
-// ============================================================
-// 4. GET STUDENT PROGRESS
-// ============================================================
+// ======================================================
+// GET STUDENT PROGRESS
+// ======================================================
 
-const getStudentProgress = async (studentId, type, week, batchId) => {
-  const allowedBatches = await getStudentBatchIds(studentId);
-
-  if (batchId && !allowedBatches.includes(batchId.toString())) {
-    throw new Error("You do not have access to this batch");
-  }
-
-  const selectedBatch = batchId ? batchId.toString() : allowedBatches[0];
-
-  if (!selectedBatch) {
-    return [];
-  }
+const getStudentProgress = async (
+  studentId,
+  type,
+  week,
+  batchId,
+  topic
+) => {
+  const selectedBatch =
+    await getSelectedStudentBatch(
+      studentId,
+      batchId
+    );
 
   const contentFilter = {
-    isPublished: true,
     batch: selectedBatch,
+    isPublished: true,
   };
 
   if (type && type !== "all") {
     contentFilter.type = type;
   }
 
+  if (topic && topic !== "all") {
+    contentFilter.topic = topic;
+  }
+
   if (week && week !== "all") {
     contentFilter.week = Number(week);
   }
 
-  const contents = await ProgressContent.find(contentFilter)
-    .populate("batch", "name status")
-    .sort({
-      week: 1,
-      createdAt: 1,
-    });
+  const contents = await ProgressContent.find(
+    contentFilter
+  ).sort({
+    type: 1,
+    week: 1,
+    createdAt: 1,
+  });
 
-  if (contents.length === 0) {
+  const contentIds = contents.map(
+    (item) => item._id
+  );
+
+  if (contentIds.length === 0) {
     return [];
   }
 
-  const contentIds = contents.map((item) => item._id);
-
-  const progress = await StudentProgress.find({
+  const records = await StudentProgress.find({
     student: studentId,
     batch: selectedBatch,
-    content: { $in: contentIds },
-  }).populate("content");
+    content: {
+      $in: contentIds,
+    },
+  })
+    .populate(
+      "updatedBy",
+      "firstName lastName"
+    )
+    .populate(
+      "content",
+      "type topic week title link"
+    );
+
+  const recordMap = new Map(
+    records.map((record) => [
+      record.content._id.toString(),
+      record,
+    ])
+  );
 
   return contents.map((content) => {
-    const studentProgress = progress.find(
-      (item) =>
-        item.content && item.content._id.toString() === content._id.toString(),
+    const existing = recordMap.get(
+      content._id.toString()
     );
+
+    if (!existing) {
+      return {
+        content,
+
+        progress: {
+          status: "not_started",
+          displayStatus: "Not Started",
+          mentorNote: "",
+          note: "",
+          completedAt: null,
+        },
+      };
+    }
+
+    const progress =
+      existing.toObject();
+
+    progress.status =
+      normalizeStatus(progress.status) ||
+      "not_started";
+
+    progress.displayStatus =
+      displayStatus(progress.status);
+
+    progress.mentorNote =
+      progress.mentorNote || "";
+
+    progress.note =
+      progress.mentorNote;
 
     return {
       content,
-      progress: studentProgress || null,
+      progress,
     };
   });
 };
 
-// ============================================================
-// 5. UPDATE STUDENT PROGRESS
-// ============================================================
+// ======================================================
+// UPDATE STUDENT PROGRESS
+// ======================================================
 
-const updateStudentProgress = async (studentId, contentId, data) => {
-  const content = await ProgressContent.findById(contentId);
+const updateStudentProgress = async (
+  studentId,
+  contentId,
+  data
+) => {
+  validateObjectId(
+    studentId,
+    "student ID"
+  );
 
-  if (!content) {
-    throw new Error("Progress content not found");
-  }
+  validateObjectId(
+    contentId,
+    "content ID"
+  );
 
-  const allowedBatches = await getStudentBatchIds(studentId);
-
-  if (content.batch && !allowedBatches.includes(content.batch.toString())) {
-    throw new Error("You do not have access to this batch");
-  }
-
-  const progressData = {
-    student: studentId,
-    batch: content.batch,
-    content: contentId,
-    type: content.type,
-  };
-
-  if (content.type === "cp") {
-    if (data.submissionLink !== undefined) {
-      progressData.submissionLink = String(data.submissionLink);
-    }
-
-    if (data.attempts !== undefined) {
-      progressData.attempts = Math.max(0, Number(data.attempts) || 0);
-    }
-
-    if (data.timeSpent !== undefined) {
-      progressData.timeSpent = Math.max(0, Number(data.timeSpent) || 0);
-    }
-
-    if (data.status !== undefined) {
-      progressData.status = data.status;
-    }
-
-    if (data.submissionLink || data.status === "done") {
-      progressData.completedAt = new Date();
-    }
-  }
-
-  if (content.type === "dev") {
-    if (data.status !== undefined) {
-      progressData.status = data.status;
-    }
-
-    if (data.watched !== undefined) {
-      progressData.watched = Boolean(data.watched);
-    }
-
-    if (data.status === "done" || data.watched === true) {
-      progressData.completedAt = new Date();
-    }
-  }
-
-  return StudentProgress.findOneAndUpdate(
-    {
-      student: studentId,
-      batch: content.batch,
-      content: contentId,
-    },
-    {
-      $set: progressData,
-    },
-    {
-      new: true,
-      upsert: true,
-      runValidators: true,
-    },
-  ).populate("content");
-};
-
-// ============================================================
-// 6. CHECK COMPLETION
-// ============================================================
-
-const isProgressCompleted = (progress, type) => {
-  if (!progress) {
-    return false;
-  }
-
-  if (type === "cp") {
-    return Boolean(
-      progress.submissionLink ||
-      progress.status === "done" ||
-      progress.completedAt,
-    );
-  }
-
-  if (type === "dev") {
-    return Boolean(
-      progress.status === "done" ||
-      progress.watched === true ||
-      progress.completedAt,
-    );
-  }
-
-  return false;
-};
-
-// ============================================================
-// 7. GET STUDENT SUMMARY
-// ============================================================
-
-const getStudentSummary = async (studentId, type, week, batchId) => {
-  const allowedBatches = await getStudentBatchIds(studentId);
-
-  if (batchId && !allowedBatches.includes(batchId.toString())) {
-    throw new Error("You do not have access to this batch");
-  }
-
-  const selectedBatch = batchId ? batchId.toString() : allowedBatches[0];
-
-  if (!selectedBatch) {
-    return {
-      total: 0,
-      completed: 0,
-      completion: 0,
-    };
-  }
-
-  const contentFilter = {
-    isPublished: true,
-    batch: selectedBatch,
-  };
-
-  if (type && type !== "all") {
-    contentFilter.type = type;
-  }
-
-  if (week && week !== "all") {
-    contentFilter.week = Number(week);
-  }
-
-  const contents = await ProgressContent.find(contentFilter);
-
-  if (contents.length === 0) {
-    return {
-      total: 0,
-      completed: 0,
-      completion: 0,
-    };
-  }
-
-  const contentIds = contents.map((item) => item._id);
-
-  const progress = await StudentProgress.find({
-    student: studentId,
-    batch: selectedBatch,
-    content: { $in: contentIds },
-  });
-
-  const completed = contents.reduce((count, content) => {
-    const studentProgress = progress.find(
-      (item) => item.content.toString() === content._id.toString(),
-    );
-
-    return count + (isProgressCompleted(studentProgress, content.type) ? 1 : 0);
-  }, 0);
-
-  const total = contents.length;
-
-  const completion = total === 0 ? 0 : Math.round((completed / total) * 100);
-
-  return {
-    total,
-    completed,
-    completion,
-  };
-};
-
-// ============================================================
-// 8. GET STUDENT RANK
-// ============================================================
-
-const getStudentRank = async (studentId, type, week, batchId) => {
-  const selectedBatch = batchId || (await getStudentCurrentBatch(studentId));
-
-  const students = await User.find({
+  const student = await User.findOne({
+    _id: studentId,
     role: "student",
-    $or: [
-      { batch: selectedBatch },
-      {
-        batchHistory: {
-          $elemMatch: {
-            batch: selectedBatch,
-            role: "student",
-          },
-        },
-      },
-    ],
-  }).select("_id gender");
-
-  const rankings = [];
-
-  for (const student of students) {
-    const summary = await getStudentSummary(
-      student._id,
-      type,
-      week,
-      selectedBatch,
-    );
-
-    rankings.push({
-      studentId: student._id.toString(),
-      gender: student.gender,
-      completed: summary.completed,
-      total: summary.total,
-      completion: summary.completion,
-    });
-  }
-
-  rankings.sort((a, b) => {
-    if (b.completed !== a.completed) {
-      return b.completed - a.completed;
-    }
-
-    if (b.completion !== a.completion) {
-      return b.completion - a.completion;
-    }
-
-    return a.studentId.localeCompare(b.studentId);
-  });
-
-  const rank =
-    rankings.findIndex((item) => item.studentId === studentId.toString()) + 1;
-
-  return {
-    rank: rank || null,
-    totalStudents: rankings.length,
-  };
-};
-
-// ============================================================
-// 9. GET OVERALL PROGRESS
-// ============================================================
-
-const getOverallProgress = async (type, week, batchId) => {
-  if (!batchId) {
-    throw new Error("Batch ID is required");
-  }
-
-  const students = await User.find({
-    role: "student",
-    batch: batchId,
-  }).select("firstName lastName email gender batch");
-
-  const results = [];
-
-  for (const student of students) {
-    const summary = await getStudentSummary(student._id, type, week, batchId);
-
-    const rank = await getStudentRank(student._id, type, week, batchId);
-
-    results.push({
-      student: {
-        id: student._id,
-        name: `${student.firstName} ${student.lastName}`,
-        email: student.email,
-        gender: student.gender,
-      },
-      total: summary.total,
-      completed: summary.completed,
-      completion: summary.completion,
-      rank: rank.rank,
-    });
-  }
-
-  return results.sort((a, b) => {
-    if (b.completed !== a.completed) {
-      return b.completed - a.completed;
-    }
-
-    if (b.completion !== a.completion) {
-      return b.completion - a.completion;
-    }
-
-    return a.student.name.localeCompare(b.student.name);
-  });
-};
-
-// ============================================================
-// 10. GET GENDER PROGRESS
-// ============================================================
-
-const getGenderProgress = async (gender, type, week, batchId) => {
-  if (!["Male", "Female"].includes(gender)) {
-    throw new Error("Invalid gender");
-  }
-
-  if (!batchId) {
-    throw new Error("Batch ID is required");
-  }
-
-  const students = await User.find({
-    role: "student",
-    gender,
-    batch: batchId,
-  }).select("firstName lastName email gender batch");
-
-  const results = [];
-
-  for (const student of students) {
-    const summary = await getStudentSummary(student._id, type, week, batchId);
-
-    const rank = await getStudentRank(student._id, type, week, batchId);
-
-    results.push({
-      student: {
-        id: student._id,
-        name: `${student.firstName} ${student.lastName}`,
-        email: student.email,
-        gender: student.gender,
-      },
-      total: summary.total,
-      completed: summary.completed,
-      completion: summary.completion,
-      rank: rank.rank,
-    });
-  }
-
-  return results.sort((a, b) => {
-    if (b.completed !== a.completed) {
-      return b.completed - a.completed;
-    }
-
-    if (b.completion !== a.completion) {
-      return b.completion - a.completion;
-    }
-
-    return a.student.name.localeCompare(b.student.name);
-  });
-};
-
-// ============================================================
-// 11. GET MENTOR PROGRESS
-// ============================================================
-
-const getMentorProgress = async (mentorId, type, week, batchId) => {
-  const mentor = await User.findOne({
-    _id: mentorId,
-    role: "mentor",
-  }).select("firstName lastName email gender assignedStudents batch");
-
-  if (!mentor) {
-    throw new Error("Mentor not found");
-  }
-
-  const selectedBatch = batchId || mentor.batch;
-
-  if (!selectedBatch) {
-    return [];
-  }
-
-  if (mentor.batch && mentor.batch.toString() !== selectedBatch.toString()) {
-    throw new Error("You do not have access to this mentor batch");
-  }
-
-  const students = await User.find({
-    _id: {
-      $in: mentor.assignedStudents || [],
-    },
-    role: "student",
-    batch: selectedBatch,
-    gender: mentor.gender,
-  }).select("firstName lastName email gender");
-
-  const results = [];
-
-  for (const student of students) {
-    const summary = await getStudentSummary(
-      student._id,
-      type,
-      week,
-      selectedBatch,
-    );
-
-    const rank = await getStudentRank(student._id, type, week, selectedBatch);
-
-    results.push({
-      student: {
-        id: student._id,
-        name: `${student.firstName} ${student.lastName}`,
-        email: student.email,
-        gender: student.gender,
-      },
-      total: summary.total,
-      completed: summary.completed,
-      completion: summary.completion,
-      rank: rank.rank,
-    });
-  }
-
-  return results.sort((a, b) => {
-    if (b.completed !== a.completed) {
-      return b.completed - a.completed;
-    }
-
-    if (b.completion !== a.completion) {
-      return b.completion - a.completion;
-    }
-
-    return a.student.name.localeCompare(b.student.name);
-  });
-};
-
-// ============================================================
-// 12. GET STUDENT DASHBOARD
-// ============================================================
-
-const getProgressDashboard = async (studentId, batchId) => {
-  const student = await User.findById(studentId).select(
-    "firstName lastName email gender batch batchHistory",
+  }).select(
+    "firstName lastName email gender batch"
   );
 
   if (!student) {
     throw new Error("Student not found");
   }
 
-  const allowedBatches = await getStudentBatchIds(studentId);
-
-  const selectedBatch = batchId || student.batch;
-
-  if (!selectedBatch) {
-    throw new Error("No batch available");
+  if (!student.batch) {
+    throw new Error(
+      "You are not assigned to a batch"
+    );
   }
 
-  if (!allowedBatches.includes(selectedBatch.toString())) {
-    throw new Error("You do not have access to this batch");
+  const content =
+    await ProgressContent.findOne({
+      _id: contentId,
+      isPublished: true,
+    });
+
+  if (!content) {
+    throw new Error(
+      "Progress content not found"
+    );
   }
 
-  const batch = await Batch.findById(selectedBatch).select(
-    "name status startDate endDate",
-  );
+  if (
+    student.batch.toString() !==
+    content.batch.toString()
+  ) {
+    throw new Error(
+      "This content is not assigned to your batch"
+    );
+  }
 
-  const cpSummary = await getStudentSummary(
-    studentId,
-    "cp",
-    null,
-    selectedBatch,
-  );
+  const normalizedStatus =
+    normalizeStatus(data?.status);
 
-  const devSummary = await getStudentSummary(
-    studentId,
-    "dev",
-    null,
-    selectedBatch,
-  );
+  if (!normalizedStatus) {
+    throw new Error(
+      `Invalid progress status. Allowed statuses: ${STATUSES.join(
+        ", "
+      )}`
+    );
+  }
 
-  const cpRank = await getStudentRank(studentId, "cp", null, selectedBatch);
+  // ====================================================
+  // FIND FIRST
+  // ====================================================
 
-  const devRank = await getStudentRank(studentId, "dev", null, selectedBatch);
+  let progress =
+    await StudentProgress.findOne({
+      student: student._id,
+      batch: content.batch,
+      content: content._id,
+    });
+
+  // ====================================================
+  // CREATE
+  // ====================================================
+
+  if (!progress) {
+    progress = new StudentProgress({
+      student: student._id,
+      batch: content.batch,
+      content: content._id,
+
+      type: content.type,
+      topic: content.topic,
+
+      status: normalizedStatus,
+
+      updatedBy: student._id,
+
+      completedAt:
+        normalizedStatus === "done"
+          ? new Date()
+          : null,
+    });
+  } else {
+    // ==================================================
+    // UPDATE
+    // ==================================================
+
+    progress.type =
+      content.type;
+
+    progress.topic =
+      content.topic;
+
+    progress.status =
+      normalizedStatus;
+
+    progress.updatedBy =
+      student._id;
+
+    progress.completedAt =
+      normalizedStatus === "done"
+        ? progress.completedAt ||
+          new Date()
+        : null;
+  }
+
+  // ====================================================
+  // SUBMISSION LINK
+  // ====================================================
+
+  if (
+    data?.submissionLink !==
+    undefined
+  ) {
+    progress.submissionLink =
+      String(
+        data.submissionLink
+      ).trim();
+  }
+
+  // ====================================================
+  // ATTEMPTS
+  // ====================================================
+
+  if (
+    data?.attempts !==
+    undefined
+  ) {
+    const attempts =
+      Number(data.attempts);
+
+    if (
+      Number.isInteger(attempts) &&
+      attempts >= 0
+    ) {
+      progress.attempts =
+        attempts;
+    }
+  }
+
+  // ====================================================
+  // TIME SPENT
+  // ====================================================
+
+  if (
+    data?.timeSpent !==
+    undefined
+  ) {
+    const timeSpent =
+      Number(data.timeSpent);
+
+    if (
+      Number.isFinite(timeSpent) &&
+      timeSpent >= 0
+    ) {
+      progress.timeSpent =
+        timeSpent;
+    }
+  }
+
+  // ====================================================
+  // WATCHED
+  // ====================================================
+
+  if (
+    data?.watched !==
+    undefined
+  ) {
+    progress.watched =
+      Boolean(data.watched);
+  }
+
+  // ====================================================
+  // MENTOR NOTE
+  // ====================================================
+
+  if (
+    data?.mentorNote !==
+    undefined
+  ) {
+    progress.mentorNote =
+      String(
+        data.mentorNote
+      )
+        .trim()
+        .slice(0, 1000);
+  }
+
+  // Backwards compatibility
+  if (
+    data?.note !==
+    undefined
+  ) {
+    progress.mentorNote =
+      String(data.note)
+        .trim()
+        .slice(0, 1000);
+  }
+
+  // ====================================================
+  // SAVE
+  // ====================================================
+
+  try {
+    await progress.save();
+  } catch (error) {
+    // If two requests attempted to create the same
+    // record at the same time, retrieve the existing one
+    // instead of crashing with 11000.
+    if (error.code === 11000) {
+      progress =
+        await StudentProgress.findOne({
+          student: student._id,
+          batch: content.batch,
+          content: content._id,
+        });
+
+      if (!progress) {
+        throw error;
+      }
+
+      progress.status =
+        normalizedStatus;
+
+      progress.updatedBy =
+        student._id;
+
+      if (
+        data?.mentorNote !==
+        undefined
+      ) {
+        progress.mentorNote =
+          String(
+            data.mentorNote
+          )
+            .trim()
+            .slice(0, 1000);
+      }
+
+      if (
+        data?.note !==
+        undefined
+      ) {
+        progress.mentorNote =
+          String(data.note)
+            .trim()
+            .slice(0, 1000);
+      }
+
+      await progress.save();
+    } else {
+      throw error;
+    }
+  }
+
+  // ====================================================
+  // POPULATE
+  // ====================================================
+
+  await progress.populate([
+    {
+      path: "student",
+      select:
+        "firstName lastName email gender",
+    },
+
+    {
+      path: "content",
+      select:
+        "type topic week title link",
+    },
+
+    {
+      path: "updatedBy",
+      select:
+        "firstName lastName",
+    },
+  ]);
+
+  const result =
+    progress.toObject();
+
+  result.status =
+    normalizeStatus(
+      result.status
+    );
+
+  result.displayStatus =
+    displayStatus(
+      result.status
+    );
+
+  result.note =
+    result.mentorNote || "";
+
+  return result;
+};
+
+// ======================================================
+// COMPATIBILITY ALIAS
+// ======================================================
+
+const updateStudentOwnProgress =
+  updateStudentProgress;
+
+// ======================================================
+// STUDENT SUMMARY
+// ======================================================
+
+const getStudentSummary = async (
+  studentId,
+  type,
+  week,
+  batchId,
+  topic
+) => {
+  const progressList =
+    await getStudentProgress(
+      studentId,
+      type,
+      week,
+      batchId,
+      topic
+    );
+
+  const completed =
+    progressList.filter(
+      (item) =>
+        isCompleted(
+          item.progress
+        )
+    ).length;
+
+  const needsHelp =
+    progressList.filter(
+      (item) =>
+        normalizeStatus(
+          item.progress?.status
+        ) === "needs_help"
+    ).length;
+
+  const inProgress =
+    progressList.filter(
+      (item) =>
+        normalizeStatus(
+          item.progress?.status
+        ) === "in_progress"
+    ).length;
+
+  const total =
+    progressList.length;
 
   return {
-    student: {
-      id: student._id,
-      name: `${student.firstName} ${student.lastName}`,
-      email: student.email,
-      gender: student.gender,
-      currentBatch: student.batch,
-      pastBatches: student.batchHistory || [],
-    },
+    total,
+    completed,
+    needsHelp,
+    inProgress,
 
-    batch,
-
-    cp: {
-      total: cpSummary.total,
-      completed: cpSummary.completed,
-      completion: cpSummary.completion,
-      rank: cpRank.rank,
-      totalStudents: cpRank.totalStudents,
-    },
-
-    dev: {
-      total: devSummary.total,
-      completed: devSummary.completed,
-      completion: devSummary.completion,
-      rank: devRank.rank,
-      totalStudents: devRank.totalStudents,
-    },
+    completion: total
+      ? Math.round(
+          (completed / total) * 100
+        )
+      : 0,
   };
 };
 
-// ============================================================
-// 13. GET WEEKLY PROGRESS
-// ============================================================
+// ======================================================
+// STUDENT RANK
+// ======================================================
 
-const getWeeklyProgress = async (week, batchId) => {
-  if (!batchId) {
-    throw new Error("Batch ID is required");
-  }
+const getStudentRank = async (
+  studentId,
+  type,
+  week,
+  batchId,
+  topic
+) => {
+  const selectedBatch =
+    await getSelectedStudentBatch(
+      studentId,
+      batchId
+    );
 
-  const students = await User.find({
-    role: "student",
-    batch: batchId,
-  }).select("firstName lastName email gender");
+  const students =
+    await User.find({
+      role: "student",
+      batch: selectedBatch,
+    }).select("_id");
 
-  const results = [];
+  const rankings =
+    await Promise.all(
+      students.map(
+        async (student) => ({
+          studentId:
+            student._id.toString(),
 
-  for (const student of students) {
-    const cp = await getStudentSummary(student._id, "cp", week, batchId);
+          ...(await getStudentSummary(
+            student._id,
+            type,
+            week,
+            selectedBatch,
+            topic
+          )),
+        })
+      )
+    );
 
-    const dev = await getStudentSummary(student._id, "dev", week, batchId);
+  rankings.sort((a, b) => {
+    if (
+      b.completed !==
+      a.completed
+    ) {
+      return (
+        b.completed -
+        a.completed
+      );
+    }
 
-    results.push({
+    return (
+      b.completion -
+      a.completion
+    );
+  });
+
+  const index =
+    rankings.findIndex(
+      (item) =>
+        item.studentId ===
+        studentId.toString()
+    );
+
+  return {
+    rank:
+      index === -1
+        ? null
+        : index + 1,
+
+    totalStudents:
+      rankings.length,
+  };
+};
+
+// ======================================================
+// STUDENT DASHBOARD
+// ======================================================
+
+const getProgressDashboard =
+  async (
+    studentId,
+    batchId
+  ) => {
+    const student =
+      await User.findById(
+        studentId
+      ).select(
+        "firstName lastName email gender batch"
+      );
+
+    if (!student) {
+      throw new Error(
+        "Student not found"
+      );
+    }
+
+    const selectedBatch =
+      await getSelectedStudentBatch(
+        studentId,
+        batchId
+      );
+
+    const cp =
+      await getStudentSummary(
+        studentId,
+        "cp",
+        null,
+        selectedBatch
+      );
+
+    const dev =
+      await getStudentSummary(
+        studentId,
+        "dev",
+        null,
+        selectedBatch
+      );
+
+    const overall =
+      await getStudentSummary(
+        studentId,
+        "all",
+        null,
+        selectedBatch
+      );
+
+    const cpRank =
+      await getStudentRank(
+        studentId,
+        "cp",
+        null,
+        selectedBatch
+      );
+
+    const devRank =
+      await getStudentRank(
+        studentId,
+        "dev",
+        null,
+        selectedBatch
+      );
+
+    return {
       student: {
         id: student._id,
         name: `${student.firstName} ${student.lastName}`,
         email: student.email,
         gender: student.gender,
       },
-      cp,
-      dev,
-    });
+
+      batch:
+        await Batch.findById(
+          selectedBatch
+        ).select(
+          "name status"
+        ),
+
+      cp: {
+        ...cp,
+        ...cpRank,
+      },
+
+      dev: {
+        ...dev,
+        ...devRank,
+      },
+
+      overall,
+    };
+  };
+
+// ======================================================
+// MENTOR PROGRESS
+// ======================================================
+
+const getMentorProgress = async (
+  mentorId,
+  type,
+  week,
+  batchId,
+  topic
+) => {
+  const mentor =
+    await User.findOne({
+      _id: mentorId,
+      role: "mentor",
+    }).select(
+      "batch assignedStudents"
+    );
+
+  if (!mentor) {
+    throw new Error(
+      "Mentor not found"
+    );
   }
 
-  return results;
-};
+  const selectedBatch =
+    batchId || mentor.batch;
 
-// ============================================================
-// 14. UNPUBLISH CONTENT
-// ============================================================
+  if (!selectedBatch) {
+    return [];
+  }
 
-const unpublishProgressContent = async (contentId) => {
-  const content = await ProgressContent.findByIdAndUpdate(
-    contentId,
-    {
-      isPublished: false,
-    },
-    {
-      new: true,
-    },
+  // IMPORTANT:
+  // Only students assigned to this mentor
+  const students =
+    await User.find({
+      _id: {
+        $in:
+          mentor.assignedStudents ||
+          [],
+      },
+
+      role: "student",
+
+      batch: selectedBatch,
+    }).select(
+      "firstName lastName email gender batch"
+    );
+
+  const result =
+    await Promise.all(
+      students.map(
+        async (student) => {
+          const cp =
+            await getStudentSummary(
+              student._id,
+              "cp",
+              week,
+              selectedBatch,
+              topic
+            );
+
+          const dev =
+            await getStudentSummary(
+              student._id,
+              "dev",
+              week,
+              selectedBatch,
+              topic
+            );
+
+          const overall =
+            await getStudentSummary(
+              student._id,
+              "all",
+              week,
+              selectedBatch,
+              topic
+            );
+
+          const items =
+            await getStudentProgress(
+              student._id,
+              "all",
+              week,
+              selectedBatch,
+              topic
+            );
+
+          // ============================================
+          // AT RISK
+          // ============================================
+
+          const atRisk =
+            overall.completion < 50 ||
+            cp.needsHelp > 0 ||
+            dev.needsHelp > 0;
+
+          // ============================================
+          // COLLECT MENTOR NOTES
+          // ============================================
+
+          const notes =
+            items
+              .filter(
+                (item) =>
+                  item.progress
+                    ?.mentorNote
+              )
+              .map(
+                (item) => ({
+                  contentId:
+                    item.content?._id,
+
+                  title:
+                    item.content?.title,
+
+                  type:
+                    item.content?.type,
+
+                  topic:
+                    item.content?.topic,
+
+                  week:
+                    item.content?.week,
+
+                  note:
+                    item.progress
+                      ?.mentorNote ||
+                    item.progress
+                      ?.note ||
+                    "",
+
+                  status:
+                    normalizeStatus(
+                      item.progress
+                        ?.status
+                    ),
+
+                  displayStatus:
+                    displayStatus(
+                      item.progress
+                        ?.status
+                    ),
+
+                  updatedAt:
+                    item.progress
+                      ?.updatedAt ||
+                    null,
+                })
+              );
+
+          return {
+            student: {
+              id: student._id,
+
+              name: `${student.firstName} ${student.lastName}`,
+
+              email: student.email,
+
+              gender: student.gender,
+
+              batch:
+                student.batch,
+            },
+
+            cp,
+
+            dev,
+
+            overall,
+
+            items,
+
+            notes,
+
+            atRisk,
+
+            riskReason:
+              overall.completion < 50
+                ? "Progress is below 50%"
+                : cp.needsHelp > 0 ||
+                  dev.needsHelp > 0
+                ? "Student needs help"
+                : null,
+          };
+        }
+      )
+    );
+
+  return result.sort(
+    (a, b) =>
+      b.overall.completion -
+      a.overall.completion
   );
-
-  if (!content) {
-    throw new Error("Progress content not found");
-  }
-
-  return content;
 };
 
-// ============================================================
-// EXPORTS
-// ============================================================
+// ======================================================
+// FALLING BEHIND / AT RISK
+// ======================================================
+
+const getFallingBehindStudents =
+  async (
+    mentorId,
+    type,
+    week,
+    batchId,
+    topic,
+    threshold = 50
+  ) => {
+    const students =
+      await getMentorProgress(
+        mentorId,
+        type,
+        week,
+        batchId,
+        topic
+      );
+
+    const minimum =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          Number(threshold) || 50
+        )
+      );
+
+    return students.filter(
+      (student) =>
+        student.overall
+          .completion <
+          minimum ||
+        student.cp
+          .needsHelp > 0 ||
+        student.dev
+          .needsHelp > 0
+    );
+  };
+
+// ======================================================
+// ADMIN OVERALL PROGRESS
+// ======================================================
+
+const getOverallProgress =
+  async (
+    type,
+    week,
+    batchId,
+    topic
+  ) => {
+    if (!batchId) {
+      throw new Error(
+        "Batch ID is required"
+      );
+    }
+
+    const students =
+      await User.find({
+        role: "student",
+        batch: batchId,
+      }).select(
+        "firstName lastName email gender"
+      );
+
+    return Promise.all(
+      students.map(
+        async (student) => ({
+          student: {
+            id: student._id,
+
+            name: `${student.firstName} ${student.lastName}`,
+
+            email: student.email,
+
+            gender: student.gender,
+          },
+
+          cp:
+            await getStudentSummary(
+              student._id,
+              "cp",
+              week,
+              batchId,
+              topic
+            ),
+
+          dev:
+            await getStudentSummary(
+              student._id,
+              "dev",
+              week,
+              batchId,
+              topic
+            ),
+
+          overall:
+            await getStudentSummary(
+              student._id,
+              type || "all",
+              week,
+              batchId,
+              topic
+            ),
+        })
+      )
+    );
+  };
+
+// ======================================================
+// UNPUBLISH
+// ======================================================
+
+const unpublishProgressContent =
+  async (contentId) => {
+    validateObjectId(
+      contentId,
+      "content ID"
+    );
+
+    const content =
+      await ProgressContent.findByIdAndUpdate(
+        contentId,
+        {
+          isPublished: false,
+        },
+        {
+          new: true,
+        }
+      );
+
+    if (!content) {
+      throw new Error(
+        "Progress content not found"
+      );
+    }
+
+    return content;
+  };
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = {
   createProgressContent,
   getProgressContent,
   getContentById,
+
   getStudentProgress,
   updateStudentProgress,
+  updateStudentOwnProgress,
+
   getStudentSummary,
   getStudentRank,
-  getOverallProgress,
-  getGenderProgress,
-  getMentorProgress,
+
   getProgressDashboard,
-  getWeeklyProgress,
+
+  getMentorProgress,
+  getFallingBehindStudents,
+
+  getOverallProgress,
+
   unpublishProgressContent,
+
+  normalizeStatus,
+  displayStatus,
+
+  TOPICS,
+  STATUSES,
 };

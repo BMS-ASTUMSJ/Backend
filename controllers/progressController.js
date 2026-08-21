@@ -1,9 +1,8 @@
 const progressService = require("../services/progressService");
 
-// ============================================================
-// CREATE / PUBLISH PROGRESS CONTENT
-// ADMIN ONLY
-// ============================================================
+// ======================================================
+// ADMIN - CREATE PROGRESS CONTENT
+// ======================================================
 
 const createProgressContent = async (req, res) => {
   try {
@@ -14,57 +13,24 @@ const createProgressContent = async (req, res) => {
       });
     }
 
-    const content = await progressService.createProgressContent({
-      ...req.body,
-      publishedBy: req.user._id,
-    });
+    const content =
+      await progressService.createProgressContent({
+        ...req.body,
+        publishedBy: req.user._id,
+      });
 
     return res.status(201).json({
       success: true,
-      message: "Progress content published successfully",
+      message:
+        "Progress content published successfully",
       data: content,
     });
   } catch (error) {
-    console.error("Create progress content error:", error);
-
-    return res.status(400).json({
-      success: false,
-      message: error.message || "Failed to publish progress content",
-    });
-  }
-};
-
-// ============================================================
-// GET PUBLISHED CONTENT
-// ============================================================
-
-const getProgressContent = async (req, res) => {
-  try {
-    const { type, week, batchId } = req.query;
-
-    let selectedBatch = batchId;
-
-    // Students automatically see their current batch
-    if (req.user.role === "student" && !selectedBatch) {
-      selectedBatch = req.user.batch;
-    }
-
-    // Mentors automatically see their batch
-    if (req.user.role === "mentor" && !selectedBatch) {
-      selectedBatch = req.user.batch;
-    }
-
-    const content = await progressService.getProgressContent(
-      type,
-      week,
-      selectedBatch,
+    console.error(
+      "createProgressContent error:",
+      error
     );
 
-    return res.status(200).json({
-      success: true,
-      data: content,
-    });
-  } catch (error) {
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -72,19 +38,71 @@ const getProgressContent = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET CONTENT BY ID
-// ============================================================
+// ======================================================
+// GET ALL PROGRESS CONTENT
+// ======================================================
 
-const getContentById = async (req, res) => {
+const getProgressContent = async (
+  req,
+  res
+) => {
   try {
-    const content = await progressService.getContentById(req.params.contentId);
+    const {
+      type,
+      week,
+      batchId,
+      topic,
+    } = req.query;
+
+    const content =
+      await progressService.getProgressContent(
+        type,
+        week,
+        batchId,
+        topic
+      );
 
     return res.status(200).json({
       success: true,
       data: content,
     });
   } catch (error) {
+    console.error(
+      "getProgressContent error:",
+      error
+    );
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// ======================================================
+// GET ONE CONTENT
+// ======================================================
+
+const getContentById = async (
+  req,
+  res
+) => {
+  try {
+    const content =
+      await progressService.getContentById(
+        req.params.contentId
+      );
+
+    return res.status(200).json({
+      success: true,
+      data: content,
+    });
+  } catch (error) {
+    console.error(
+      "getContentById error:",
+      error
+    );
+
     return res.status(404).json({
       success: false,
       message: error.message,
@@ -92,28 +110,41 @@ const getContentById = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET STUDENT PROGRESS
-// ============================================================
+// ======================================================
+// STUDENT - GET OWN PROGRESS
+// ======================================================
 
-const getStudentProgress = async (req, res) => {
+const getStudentProgress = async (
+  req,
+  res
+) => {
   try {
-    const studentId = req.user._id;
-
-    const { type, week, batchId } = req.query;
-
-    const progress = await progressService.getStudentProgress(
-      studentId,
+    const {
       type,
       week,
       batchId,
-    );
+      topic,
+    } = req.query;
+
+    const progress =
+      await progressService.getStudentProgress(
+        req.user._id,
+        type,
+        week,
+        batchId,
+        topic
+      );
 
     return res.status(200).json({
       success: true,
       data: progress,
     });
   } catch (error) {
+    console.error(
+      "getStudentProgress error:",
+      error
+    );
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -121,26 +152,53 @@ const getStudentProgress = async (req, res) => {
   }
 };
 
-// ============================================================
-// UPDATE STUDENT PROGRESS
-// ============================================================
+// ======================================================
+// STUDENT - UPDATE OWN PROGRESS
+// ======================================================
 
-const updateStudentProgress = async (req, res) => {
+const updateStudentProgress = async (
+  req,
+  res
+) => {
   try {
-    const studentId = req.user._id;
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Student access required",
+      });
+    }
 
-    const progress = await progressService.updateStudentProgress(
-      studentId,
-      req.params.contentId,
-      req.body,
-    );
+    const {
+      contentId,
+    } = req.params;
+
+    if (!contentId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Content ID is required",
+      });
+    }
+
+    const progress =
+      await progressService.updateStudentProgress(
+        req.user._id,
+        contentId,
+        req.body
+      );
 
     return res.status(200).json({
       success: true,
-      message: "Progress updated successfully",
+      message:
+        "Student progress updated successfully",
       data: progress,
     });
   } catch (error) {
+    console.error(
+      "updateStudentProgress error:",
+      error
+    );
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -148,26 +206,41 @@ const updateStudentProgress = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET STUDENT SUMMARY
-// ============================================================
+// ======================================================
+// STUDENT - SUMMARY
+// ======================================================
 
-const getStudentSummary = async (req, res) => {
+const getStudentSummary = async (
+  req,
+  res
+) => {
   try {
-    const { type, week, batchId } = req.query;
-
-    const summary = await progressService.getStudentSummary(
-      req.user._id,
+    const {
       type,
       week,
       batchId,
-    );
+      topic,
+    } = req.query;
+
+    const summary =
+      await progressService.getStudentSummary(
+        req.user._id,
+        type,
+        week,
+        batchId,
+        topic
+      );
 
     return res.status(200).json({
       success: true,
       data: summary,
     });
   } catch (error) {
+    console.error(
+      "getStudentSummary error:",
+      error
+    );
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -175,26 +248,41 @@ const getStudentSummary = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET STUDENT RANK
-// ============================================================
+// ======================================================
+// STUDENT - RANK
+// ======================================================
 
-const getStudentRank = async (req, res) => {
+const getStudentRank = async (
+  req,
+  res
+) => {
   try {
-    const { type, week, batchId } = req.query;
-
-    const rank = await progressService.getStudentRank(
-      req.user._id,
+    const {
       type,
       week,
       batchId,
-    );
+      topic,
+    } = req.query;
+
+    const rank =
+      await progressService.getStudentRank(
+        req.user._id,
+        type,
+        week,
+        batchId,
+        topic
+      );
 
     return res.status(200).json({
       success: true,
       data: rank,
     });
   } catch (error) {
+    console.error(
+      "getStudentRank error:",
+      error
+    );
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -202,70 +290,31 @@ const getStudentRank = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET OVERALL PROGRESS
-// ADMIN ONLY
-// ============================================================
+// ======================================================
+// STUDENT DASHBOARD
+// ======================================================
 
-const getOverallProgress = async (req, res) => {
+const getProgressDashboard = async (
+  req,
+  res
+) => {
   try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Admin access required",
-      });
-    }
-
-    const { type, week, batchId } = req.query;
-
-    const progress = await progressService.getOverallProgress(
-      type,
-      week,
-      batchId,
-    );
+    const dashboard =
+      await progressService.getProgressDashboard(
+        req.user._id,
+        req.query.batchId
+      );
 
     return res.status(200).json({
       success: true,
-      data: progress,
+      data: dashboard,
     });
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ============================================================
-// GET GENDER PROGRESS
-// ADMIN ONLY
-// ============================================================
-
-const getGenderProgress = async (req, res) => {
-  try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Admin access required",
-      });
-    }
-
-    const { gender } = req.params;
-
-    const { type, week, batchId } = req.query;
-
-    const progress = await progressService.getGenderProgress(
-      gender,
-      type,
-      week,
-      batchId,
+    console.error(
+      "getProgressDashboard error:",
+      error
     );
 
-    return res.status(200).json({
-      success: true,
-      data: progress,
-    });
-  } catch (error) {
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -273,12 +322,17 @@ const getGenderProgress = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET MENTOR PROGRESS
-// MENTOR OWN STUDENTS
-// ============================================================
+const getStudentDashboard =
+  getProgressDashboard;
 
-const getMentorProgress = async (req, res) => {
+// ======================================================
+// MENTOR - GET STUDENT PROGRESS
+// ======================================================
+
+const getMentorProgress = async (
+  req,
+  res
+) => {
   try {
     if (req.user.role !== "mentor") {
       return res.status(403).json({
@@ -287,22 +341,32 @@ const getMentorProgress = async (req, res) => {
       });
     }
 
-    const mentorId = req.user._id;
-
-    const { type, week, batchId } = req.query;
-
-    const progress = await progressService.getMentorProgress(
-      mentorId,
+    const {
       type,
       week,
       batchId,
-    );
+      topic,
+    } = req.query;
+
+    const progress =
+      await progressService.getMentorProgress(
+        req.user._id,
+        type,
+        week,
+        batchId,
+        topic
+      );
 
     return res.status(200).json({
       success: true,
       data: progress,
     });
   } catch (error) {
+    console.error(
+      "getMentorProgress error:",
+      error
+    );
+
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -310,12 +374,64 @@ const getMentorProgress = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET SPECIFIC MENTOR PROGRESS
-// ADMIN ONLY
-// ============================================================
+// ======================================================
+// MENTOR - AT RISK STUDENTS
+// ======================================================
 
-const getMentorProgressById = async (req, res) => {
+const getFallingBehindStudents =
+  async (req, res) => {
+    try {
+      if (req.user.role !== "mentor") {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Mentor access required",
+        });
+      }
+
+      const {
+        type,
+        week,
+        batchId,
+        topic,
+        threshold,
+      } = req.query;
+
+      const students =
+        await progressService.getFallingBehindStudents(
+          req.user._id,
+          type,
+          week,
+          batchId,
+          topic,
+          threshold
+        );
+
+      return res.status(200).json({
+        success: true,
+        data: students,
+      });
+    } catch (error) {
+      console.error(
+        "getFallingBehindStudents error:",
+        error
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  };
+
+// ======================================================
+// ADMIN - OVERALL PROGRESS
+// ======================================================
+
+const getOverallProgress = async (
+  req,
+  res
+) => {
   try {
     if (req.user.role !== "admin") {
       return res.status(403).json({
@@ -324,47 +440,31 @@ const getMentorProgressById = async (req, res) => {
       });
     }
 
-    const mentorId = req.params.mentorId;
-
-    const { type, week, batchId } = req.query;
-
-    const progress = await progressService.getMentorProgress(
-      mentorId,
+    const {
       type,
       week,
       batchId,
-    );
+      topic,
+    } = req.query;
+
+    const progress =
+      await progressService.getOverallProgress(
+        type,
+        week,
+        batchId,
+        topic
+      );
 
     return res.status(200).json({
       success: true,
       data: progress,
     });
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ============================================================
-// GET STUDENT PROGRESS DASHBOARD
-// ============================================================
-
-const getProgressDashboard = async (req, res) => {
-  try {
-    const { batchId } = req.query;
-
-    const dashboard = await progressService.getProgressDashboard(
-      req.user._id,
-      batchId,
+    console.error(
+      "getOverallProgress error:",
+      error
     );
 
-    return res.status(200).json({
-      success: true,
-      data: dashboard,
-    });
-  } catch (error) {
     return res.status(400).json({
       success: false,
       message: error.message,
@@ -372,72 +472,44 @@ const getProgressDashboard = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET WEEKLY PROGRESS
-// ADMIN ONLY
-// ============================================================
+// ======================================================
+// ADMIN - UNPUBLISH
+// ======================================================
 
-const getWeeklyProgress = async (req, res) => {
-  try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
+const unpublishProgressContent =
+  async (req, res) => {
+    try {
+      if (req.user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Admin access required",
+        });
+      }
+
+      const content =
+        await progressService.unpublishProgressContent(
+          req.params.contentId
+        );
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Progress content unpublished successfully",
+        data: content,
+      });
+    } catch (error) {
+      console.error(
+        "unpublishProgressContent error:",
+        error
+      );
+
+      return res.status(404).json({
         success: false,
-        message: "Admin access required",
+        message: error.message,
       });
     }
-
-    const { week } = req.params;
-
-    const { batchId } = req.query;
-
-    const progress = await progressService.getWeeklyProgress(week, batchId);
-
-    return res.status(200).json({
-      success: true,
-      data: progress,
-    });
-  } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ============================================================
-// UNPUBLISH CONTENT
-// ADMIN ONLY
-// ============================================================
-
-const unpublishProgressContent = async (req, res) => {
-  try {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Admin access required",
-      });
-    }
-
-    const content = await progressService.unpublishProgressContent(
-      req.params.contentId,
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: "Progress content unpublished successfully",
-      data: content,
-    });
-  } catch (error) {
-    return res.status(404).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ============================================================
-// EXPORTS
-// ============================================================
+  };
 
 module.exports = {
   createProgressContent,
@@ -448,14 +520,13 @@ module.exports = {
   updateStudentProgress,
   getStudentSummary,
   getStudentRank,
-  getProgressDashboard,
-
-  getOverallProgress,
-  getGenderProgress,
-  getWeeklyProgress,
 
   getMentorProgress,
-  getMentorProgressById,
+  getFallingBehindStudents,
 
+  getProgressDashboard,
+  getStudentDashboard,
+
+  getOverallProgress,
   unpublishProgressContent,
 };
