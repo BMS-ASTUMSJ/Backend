@@ -23,10 +23,12 @@ const applicantRoutes = require("./routes/applicantRoutes");
 const teamRoutes = require("./routes/teamRoutes");
 const announcementRoutes = require("./routes/announcementRoutes");
 const attendanceRoutes = require("./routes/attendanceRoute");
+const sessionRoutes = require("./routes/sessionRoutes");
 const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const assignmentRoutes = require("./routes/assignmentRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
+const atRiskRoutes = require("./routes/atRiskRoutes");
 
 // ============================================================
 // APP
@@ -68,7 +70,10 @@ app.use(
 // Assignment uploaded files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-app.use("/api/at-risk", require("./routes/atRiskRoutes"));
+// ============================================================
+// AT-RISK ROUTES
+// ============================================================
+app.use("/api/at-risk", atRiskRoutes);
 
 // ============================================================
 // DATABASE
@@ -77,7 +82,7 @@ app.use("/api/at-risk", require("./routes/atRiskRoutes"));
 connectDB();
 
 // ============================================================
-// ROUTES
+// API ROUTES
 // ============================================================
 
 app.use("/api/auth", authRoutes);
@@ -97,6 +102,17 @@ app.use("/api/assignments", assignmentRoutes);
 app.use("/api/submissions", submissionRoutes);
 
 app.use("/api/attendance", attendanceRoutes);
+
+// ============================================================
+// SESSION ROUTES
+// ============================================================
+// Mentor Attendance uses:
+// GET /api/sessions/my-team
+//
+// This was missing before, which caused the 404 error.
+// ============================================================
+
+app.use("/api/sessions", sessionRoutes);
 
 app.use("/api/batch-history", batchHistoryRoutes);
 
