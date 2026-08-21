@@ -2,10 +2,6 @@ const mongoose = require("mongoose");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
-// ============================================================
-// MENTOR - GET MY BATCH HISTORY
-// ============================================================
-
 const getMyBatchHistory = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
@@ -47,10 +43,6 @@ const getMyBatchHistory = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// MENTOR - GET ONE PREVIOUS BATCH
-// ============================================================
 
 const getMyBatch = async (req, res) => {
   try {
@@ -142,10 +134,6 @@ const getMyBatch = async (req, res) => {
   }
 };
 
-// ============================================================
-// ADMIN - GET ALL BATCHES
-// ============================================================
-
 const getAllBatchesForAdmin = async (req, res) => {
   try {
     const batches = await Batch.find({})
@@ -167,10 +155,6 @@ const getAllBatchesForAdmin = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// ADMIN - GET USERS WHO BELONGED TO A BATCH
-// ============================================================
 
 const getBatchMembersForAdmin = async (req, res) => {
   try {

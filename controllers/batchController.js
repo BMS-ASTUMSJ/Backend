@@ -1,12 +1,8 @@
 const mongoose = require("mongoose");
-const Batch = require("../models/Batch");
-const User = require("../models/User");
-const Team = require("../models/Team");
-const Applicant = require("../models/Applicant");
-
-// ============================================================
-// CREATE BATCH
-// ============================================================
+const Batch = require("../models/batch");
+const User = require("../models/user");
+const Team = require("../models/team");
+const Applicant = require("../models/applicant");
 
 const createBatch = async (req, res) => {
   try {
@@ -79,10 +75,6 @@ const createBatch = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET ALL BATCHES
-// ============================================================
-
 const getBatches = async (req, res) => {
   try {
     const batches = await Batch.find().sort({
@@ -103,10 +95,6 @@ const getBatches = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// GET MY BATCHES
-// ============================================================
 
 const getMyBatches = async (req, res) => {
   try {
@@ -186,10 +174,6 @@ const getMyBatches = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET ONE OF MY BATCHES
-// ============================================================
-
 const getMyBatch = async (req, res) => {
   try {
     const { id } = req.params;
@@ -264,10 +248,6 @@ const getMyBatch = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET ACTIVE REGISTRATION BATCH
-// ============================================================
-
 const getActiveRegistrationBatch = async (req, res) => {
   try {
     const activeBatch = await Batch.findOne({
@@ -290,10 +270,6 @@ const getActiveRegistrationBatch = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// TOGGLE REGISTRATION
-// ============================================================
 
 const toggleBatchRegistration = async (req, res) => {
   try {
@@ -364,10 +340,6 @@ const toggleBatchRegistration = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// UPDATE BATCH STATUS
-// ============================================================
 
 const updateBatchStatus = async (req, res) => {
   try {
@@ -440,10 +412,6 @@ const updateBatchStatus = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// GET BATCH DASHBOARD STATISTICS
-// ============================================================
 
 const getBatchDashboardStats = async (req, res) => {
   try {
@@ -592,10 +560,6 @@ const getBatchDashboardStats = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET BATCH STATISTICS
-// ============================================================
-
 const getBatchStats = async (req, res) => {
   try {
     const totalBatches = await Batch.countDocuments();
@@ -632,10 +596,6 @@ const getBatchStats = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET ONE BATCH WITH STUDENTS AND MENTORS
-// ============================================================
-
 const getBatchById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -655,10 +615,6 @@ const getBatchById = async (req, res) => {
         message: "Batch not found.",
       });
     }
-
-    // ========================================================
-    // FIND STUDENTS
-    // ========================================================
 
     const students = await User.find({
       $or: [
@@ -681,10 +637,6 @@ const getBatchById = async (req, res) => {
       )
       .populate("batch", "name startDate endDate status");
 
-    // ========================================================
-    // FIND MENTORS
-    // ========================================================
-
     const mentors = await User.find({
       $or: [
         {
@@ -706,25 +658,13 @@ const getBatchById = async (req, res) => {
       )
       .populate("batch", "name startDate endDate status");
 
-    // ========================================================
-    // FIND TEAMS
-    // ========================================================
-
     const teams = await Team.find({
       batch: id,
     });
 
-    // ========================================================
-    // FIND APPLICANTS
-    // ========================================================
-
     const applicants = await Applicant.find({
       batch: id,
     });
-
-    // ========================================================
-    // RETURN EVERYTHING
-    // ========================================================
 
     return res.status(200).json({
       success: true,
@@ -751,10 +691,6 @@ const getBatchById = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// UPDATE BATCH
-// ============================================================
 
 const updateBatch = async (req, res) => {
   try {
@@ -843,10 +779,6 @@ const updateBatch = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// EXPORTS
-// ============================================================
 
 module.exports = {
   createBatch,

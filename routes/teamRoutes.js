@@ -6,19 +6,29 @@ const {
   createTeam,
   getTeams,
   getTeamById,
+  updateTeam,
   deleteTeam,
 } = require("../controllers/teamController");
 
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
-// Create team
+// ============================================================
+// CREATE TEAM
+// ============================================================
+
 router.post("/", protect, authorize("admin"), createTeam);
 
-// Get all teams
+// ============================================================
+// GET ALL TEAMS
+// ============================================================
+
 router.get("/", protect, authorize("admin", "mentor", "student"), getTeams);
 
-// Get one team
+// ============================================================
+// GET TEAM BY ID
+// ============================================================
+
 router.get(
   "/:id",
   protect,
@@ -26,7 +36,16 @@ router.get(
   getTeamById,
 );
 
-// Delete team
+// ============================================================
+// UPDATE TEAM
+// ============================================================
+
+router.put("/:id", protect, authorize("admin"), updateTeam);
+
+// ============================================================
+// DELETE TEAM
+// ============================================================
+
 router.delete("/:id", protect, authorize("admin"), deleteTeam);
 
 module.exports = router;

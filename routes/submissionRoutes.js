@@ -1,8 +1,10 @@
 const express = require("express");
+
 const router = express.Router();
 
 const {
   submitAssignment,
+  updateSubmission,
   gradeSubmission,
   getSubmissionsByAssignment,
   getMySubmissions,
@@ -11,36 +13,39 @@ const {
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
+// ============================================================
+// STUDENT - FIRST SUBMISSION / RESUBMISSION
+// ============================================================
 
-router.post(
-  "/",
-  protect,
-  authorize("student"),
-  submitAssignment
-);
+router.post("/", protect, authorize("student"), submitAssignment);
 
+// ============================================================
+// STUDENT - UPDATE PENDING SUBMISSION
+// ============================================================
 
-router.get(
-  "/my",
-  protect,
-  authorize("student"),
-  getMySubmissions
-);
+router.put("/:id", protect, authorize("student"), updateSubmission);
 
+// ============================================================
+// STUDENT - MY SUBMISSIONS
+// ============================================================
+
+router.get("/my", protect, authorize("student"), getMySubmissions);
+
+// ============================================================
+// MENTOR / ADMIN - GET SUBMISSIONS
+// ============================================================
 
 router.get(
   "/assignment/:assignmentId",
   protect,
   authorize("mentor", "admin"),
-  getSubmissionsByAssignment
+  getSubmissionsByAssignment,
 );
 
+// ============================================================
+// MENTOR - GRADE / REQUEST RESUBMISSION
+// ============================================================
 
-router.put(
-  "/grade/:id",
-  protect,
-  authorize("mentor"),
-  gradeSubmission
-);
+router.put("/grade/:id", protect, authorize("mentor"), gradeSubmission);
 
 module.exports = router;

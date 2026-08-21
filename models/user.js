@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
+    // ============================================================
+    // BASIC INFORMATION
+    // ============================================================
+
     firstName: {
       type: String,
       required: true,
@@ -33,6 +37,10 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ============================================================
+    // ROLE & STATUS
+    // ============================================================
+
     role: {
       type: String,
       enum: ["admin", "mentor", "student"],
@@ -50,11 +58,19 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
 
+    // ============================================================
+    // GENDER
+    // ============================================================
+
     gender: {
       type: String,
       enum: ["Male", "Female"],
       required: true,
     },
+
+    // ============================================================
+    // CONTACT INFORMATION
+    // ============================================================
 
     phone: {
       type: String,
@@ -67,6 +83,10 @@ const userSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+
+    // ============================================================
+    // PROFILE
+    // ============================================================
 
     bio: {
       type: String,
@@ -81,6 +101,7 @@ const userSchema = new mongoose.Schema(
         default: "",
         trim: true,
       },
+
       publicId: {
         type: String,
         default: "",
@@ -106,11 +127,19 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ============================================================
+    // CURRENT BATCH
+    // ============================================================
+
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       default: null,
     },
+
+    // ============================================================
+    // BATCH HISTORY
+    // ============================================================
 
     batchHistory: [
       {
@@ -133,12 +162,20 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // ============================================================
+    // OLD / BACKWARD COMPATIBILITY
+    // ============================================================
+
     pastBatches: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Batch",
       },
     ],
+
+    // ============================================================
+    // MENTOR / STUDENT ASSIGNMENTS
+    // ============================================================
 
     assignedMentors: [
       {
@@ -153,6 +190,24 @@ const userSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+
+    // ============================================================
+    // AT RISK
+    // ============================================================
+
+    /*
+      false = normal student
+      true  = student is at risk
+    */
+
+    atRisk: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ============================================================
+    // PASSWORD RESET
+    // ============================================================
 
     passwordResetOtp: {
       type: String,
@@ -174,10 +229,33 @@ const userSchema = new mongoose.Schema(
   },
 );
 
+// ============================================================
+// INDEXES
+// ============================================================
+
 userSchema.index({
   role: 1,
   gender: 1,
   batch: 1,
 });
+
+userSchema.index({
+  role: 1,
+  assignedStudents: 1,
+});
+
+userSchema.index({
+  role: 1,
+  assignedMentors: 1,
+});
+
+userSchema.index({
+  role: 1,
+  atRisk: 1,
+});
+
+// ============================================================
+// EXPORT
+// ============================================================
 
 module.exports = mongoose.models.User || mongoose.model("User", userSchema);

@@ -1,5 +1,37 @@
 const mongoose = require("mongoose");
 
+const assignmentFileSchema = new mongoose.Schema(
+  {
+    originalName: {
+      type: String,
+      required: true,
+    },
+
+    fileName: {
+      type: String,
+      required: true,
+    },
+
+    fileUrl: {
+      type: String,
+      required: true,
+    },
+
+    mimetype: {
+      type: String,
+      default: "",
+    },
+
+    size: {
+      type: Number,
+      default: 0,
+    },
+  },
+  {
+    _id: false,
+  },
+);
+
 const assignmentSchema = new mongoose.Schema(
   {
     title: {
@@ -14,6 +46,14 @@ const assignmentSchema = new mongoose.Schema(
       trim: true,
     },
 
+    instructorName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    // Automatically assigned by the backend.
+    // Admin does not choose a batch.
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
@@ -32,11 +72,22 @@ const assignmentSchema = new mongoose.Schema(
       min: 1,
     },
 
-  
+    // Optional external link
+    link: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    // Optional uploaded files
+    files: {
+      type: [assignmentFileSchema],
+      default: [],
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 assignmentSchema.index({ batch: 1, deadline: 1 });

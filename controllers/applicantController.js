@@ -1,4 +1,4 @@
-// const Applicant = require("../models/applicant");
+const Applicant = require("../models/applicant");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 const bcrypt = require("bcryptjs");

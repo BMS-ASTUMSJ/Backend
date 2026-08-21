@@ -1,9 +1,6 @@
 const cloudinary = require("../config/cloudinary");
 const User = require("../models/user");
 
-// ============================================================
-// GET PROFILE
-// ============================================================
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
@@ -32,9 +29,6 @@ const getProfile = async (req, res) => {
   }
 };
 
-// ============================================================
-// UPDATE PROFILE (text fields + optional image, single request)
-// ============================================================
 const uploadProfileImage = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -119,9 +113,6 @@ const uploadProfileImage = async (req, res) => {
   }
 };
 
-// ============================================================
-// REMOVE PROFILE IMAGE
-// ============================================================
 const removeProfileImage = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);

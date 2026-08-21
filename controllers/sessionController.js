@@ -4,19 +4,7 @@ const Session = require("../models/session");
 const Batch = require("../models/batch");
 const Team = require("../models/team");
 
-// ============================================================
-// CONSTANTS
-// ============================================================
-
 const VALID_TYPES = ["Lecture", "Experience Sharing", "Contest"];
-
-// ============================================================
-// CREATE A SINGLE SESSION
-// ============================================================
-//
-// Mostly used for one-off additions (e.g. an extra makeup
-// lecture). For normal weekly setup, prefer generateWeekSessions.
-// ============================================================
 
 const createSession = async (req, res) => {
   try {
@@ -82,14 +70,6 @@ const createSession = async (req, res) => {
     let sessionOrder = Number(order) || 1;
     let sessionName = name && name.trim();
 
-    // ========================================================
-    // AUTO-NAMING FOR LECTURES
-    // ========================================================
-    //
-    // Lecture count per week is dynamic. If no name is given,
-    // figure out the next lecture number for this batch/week.
-    // ========================================================
-
     if (type === "Lecture") {
       if (!sessionName) {
         const existingLectures = await Session.countDocuments({
@@ -103,8 +83,6 @@ const createSession = async (req, res) => {
         sessionName = `Lecture ${sessionOrder}`;
       }
     } else {
-      // Contest / Experience Sharing are singular per week by convention,
-      // but an explicit name still overrides this.
       sessionName = sessionName || type;
       sessionOrder = sessionOrder || 1;
     }
@@ -141,27 +119,6 @@ const createSession = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// GENERATE A FULL WEEK OF SESSIONS
-// ============================================================
-//
-// This is the main tool Admins use week to week. They specify
-// how many lectures that week has (2, 4, or any number) and the
-// system automatically creates that many Lecture sessions plus
-// one Contest and one Experience Sharing session.
-//
-// Body:
-// {
-//   batchId, week, lectureCount,
-//   dates: {
-//     lecture1: "2026-08-24", lecture2: "2026-08-26",
-//     lecture3: "2026-08-28", lecture4: "2026-08-30",
-//     contest: "2026-08-29", experienceSharing: "2026-08-31",
-//     default: "2026-08-24"   // fallback if a specific one is omitted
-//   }
-// }
-// ============================================================
 
 const generateWeekSessions = async (req, res) => {
   try {
@@ -266,15 +223,6 @@ const generateWeekSessions = async (req, res) => {
       createdBy: adminId,
     });
 
-    // Replace any existing sessions for this batch/week so
-    // regenerating a week (e.g. changing 2 lectures -> 4) is safe
-    // and doesn't create duplicates/orphans.
-    //
-    // NOTE: if attendance has already been marked against a
-    // session being removed here, that attendance history stays
-    // in the Attendance collection (it is not deleted) but will
-    // no longer be reachable through an active Session. Regenerate
-    // a week's sessions BEFORE attendance has been marked for it.
     await Session.deleteMany({ batch: batchId, week: weekNumber });
 
     const created = await Session.insertMany(sessionsToCreate);
@@ -294,10 +242,6 @@ const generateWeekSessions = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// LIST SESSIONS FOR A BATCH (ADMIN)
-// ============================================================
 
 const listSessionsForBatch = async (req, res) => {
   try {
@@ -340,15 +284,6 @@ const listSessionsForBatch = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// LIST SESSIONS FOR THE LOGGED-IN MENTOR'S TEAM BATCH
-// ============================================================
-//
-// Mentors never create sessions — they just see whatever the
-// admin has configured for their team's batch and mark attendance
-// against it.
-// ============================================================
 
 const listSessionsForMentor = async (req, res) => {
   try {
@@ -394,10 +329,6 @@ const listSessionsForMentor = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// DEACTIVATE (SOFT-DELETE) A SESSION
-// ============================================================
 
 const deleteSession = async (req, res) => {
   try {

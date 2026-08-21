@@ -16,12 +16,20 @@ const mongoose = require("mongoose");
 
 const sessionSchema = new mongoose.Schema(
   {
+    // ========================================================
+    // BATCH
+    // ========================================================
+
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
       required: true,
       index: true,
     },
+
+    // ========================================================
+    // WEEK
+    // ========================================================
 
     week: {
       type: Number,
@@ -30,40 +38,67 @@ const sessionSchema = new mongoose.Schema(
       index: true,
     },
 
+    // ========================================================
+    // SESSION TYPE
+    // ========================================================
+
     type: {
       type: String,
       enum: ["Lecture", "Experience Sharing", "Contest"],
       required: true,
+      trim: true,
     },
 
+    // ========================================================
+    // SESSION NAME
+    // ========================================================
+
     // e.g. "Lecture 1", "Lecture 2", "Lecture 3", "Contest",
-    // "Experience Sharing". Auto-generated for Lectures unless
-    // explicitly provided.
+    // "Experience Sharing".
     name: {
       type: String,
       required: true,
       trim: true,
     },
 
-    // Position within its type for the week (Lecture 1 = 1,
-    // Lecture 2 = 2, ...). Contest/Experience Sharing default to 1
-    // since there is normally only one of each per week.
+    // ========================================================
+    // POSITION WITHIN SESSION TYPE
+    // ========================================================
+
+    // Lecture 1 = 1
+    // Lecture 2 = 2
+    // Lecture 3 = 3
+    //
+    // Contest / Experience Sharing normally use 1.
     order: {
       type: Number,
       required: true,
       default: 1,
     },
 
+    // ========================================================
+    // SESSION DATE
+    // ========================================================
+
     date: {
       type: Date,
       required: true,
+      index: true,
     },
+
+    // ========================================================
+    // CREATED BY
+    // ========================================================
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+
+    // ========================================================
+    // ACTIVE STATUS
+    // ========================================================
 
     isActive: {
       type: Boolean,
@@ -75,11 +110,23 @@ const sessionSchema = new mongoose.Schema(
   },
 );
 
-// One session name per batch/week (prevents duplicate "Lecture 2"
-// entries for the same batch in the same week).
+// ============================================================
+// PREVENT DUPLICATE SESSIONS
+// ============================================================
+//
+// One session name per batch/week.
+// This prevents duplicate "Lecture 2" entries for the same
+// batch and week.
+//
+// Different weeks can still have the same session name.
+// ============================================================
+
 sessionSchema.index(
   { batch: 1, week: 1, name: 1 },
-  { unique: true, name: "batch_week_name_unique" },
+  {
+    unique: true,
+    name: "batch_week_name_unique",
+  },
 );
 
 module.exports =
