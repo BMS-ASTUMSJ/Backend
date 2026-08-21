@@ -1,6 +1,10 @@
 const cloudinary = require("../config/cloudinary");
 const User = require("../models/user");
 
+// ============================================================
+// GET PROFILE
+// ============================================================
+
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
@@ -29,6 +33,10 @@ const getProfile = async (req, res) => {
   }
 };
 
+// ============================================================
+// UPDATE PROFILE + UPLOAD IMAGE
+// ============================================================
+
 const uploadProfileImage = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -40,25 +48,38 @@ const uploadProfileImage = async (req, res) => {
       });
     }
 
-    const { firstName, lastName, phone, bio } = req.body;
+    const { firstName, phone, bio } = req.body;
 
-    if (firstName !== undefined && firstName.trim()) {
+    // ----------------------------------------------------------
+    // UPDATE FIRST NAME
+    // ----------------------------------------------------------
+
+    if (firstName !== undefined) {
       user.firstName = firstName.trim();
     }
 
-    if (lastName !== undefined && lastName.trim()) {
-      user.lastName = lastName.trim();
-    }
+    // ----------------------------------------------------------
+    // UPDATE PHONE
+    // ----------------------------------------------------------
 
     if (phone !== undefined) {
       user.phone = phone.trim();
     }
 
+    // ----------------------------------------------------------
+    // UPDATE BIO
+    // ----------------------------------------------------------
+
     if (bio !== undefined) {
       user.bio = bio.trim();
     }
 
+    // ----------------------------------------------------------
+    // UPLOAD PROFILE IMAGE
+    // ----------------------------------------------------------
+
     if (req.file) {
+      // Delete old image from Cloudinary
       if (user.profileImage?.publicId) {
         try {
           await cloudinary.uploader.destroy(user.profileImage.publicId);
@@ -67,6 +88,7 @@ const uploadProfileImage = async (req, res) => {
         }
       }
 
+      // Upload new image
       const uploadResult = await new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           {
@@ -91,7 +113,15 @@ const uploadProfileImage = async (req, res) => {
       };
     }
 
+    // ----------------------------------------------------------
+    // SAVE
+    // ----------------------------------------------------------
+
     await user.save();
+
+    // ----------------------------------------------------------
+    // GET UPDATED USER
+    // ----------------------------------------------------------
 
     const updatedUser = await User.findById(user._id)
       .select("-password")
@@ -113,6 +143,10 @@ const uploadProfileImage = async (req, res) => {
   }
 };
 
+// ============================================================
+// REMOVE PROFILE IMAGE
+// ============================================================
+
 const removeProfileImage = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -124,6 +158,7 @@ const removeProfileImage = async (req, res) => {
       });
     }
 
+    // Delete from Cloudinary
     if (user.profileImage?.publicId) {
       try {
         await cloudinary.uploader.destroy(user.profileImage.publicId);
@@ -132,6 +167,7 @@ const removeProfileImage = async (req, res) => {
       }
     }
 
+    // Clear database
     user.profileImage = {
       url: "",
       publicId: "",
@@ -139,10 +175,12 @@ const removeProfileImage = async (req, res) => {
 
     await user.save();
 
+    const updatedUser = await User.findById(user._id).select("-password");
+
     return res.status(200).json({
       success: true,
       message: "Profile image removed successfully.",
-      user,
+      user: updatedUser,
     });
   } catch (error) {
     console.error("Remove profile image error:", error);

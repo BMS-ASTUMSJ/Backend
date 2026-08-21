@@ -19,6 +19,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const batchRoutes = require("./routes/batchRoutes");
+const profileRoutes = require("./routes/profileRoutes");
 const applicantRoutes = require("./routes/applicantRoutes");
 const teamRoutes = require("./routes/teamRoutes");
 const announcementRoutes = require("./routes/announcementRoutes");
@@ -92,6 +93,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/batches", batchRoutes);
 
 app.use("/api/applicants", applicantRoutes);
+
+app.use("/api/profile", profileRoutes);
 
 app.use("/api/teams", teamRoutes);
 
