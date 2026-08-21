@@ -27,6 +27,7 @@ const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const assignmentRoutes = require("./routes/assignmentRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
+const profileRoutes = require("./routes/profileRoutes");
 
 // ============================================================
 // APP
@@ -65,7 +66,6 @@ app.use(
 // STATIC FILES
 // ============================================================
 
-// Assignment uploaded files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/at-risk", require("./routes/atRiskRoutes"));
@@ -102,6 +102,8 @@ app.use("/api/batch-history", batchHistoryRoutes);
 
 app.use("/api/progress", progressRoutes);
 
+app.use("/api/profile", profileRoutes);
+
 // ============================================================
 // ROOT
 // ============================================================
@@ -137,7 +139,6 @@ app.use((err, req, res, next) => {
   // ==========================================================
 
   if (err instanceof multer.MulterError) {
-    // File too large
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
         success: false,
@@ -145,7 +146,6 @@ app.use((err, req, res, next) => {
       });
     }
 
-    // Too many files
     if (err.code === "LIMIT_UNEXPECTED_FILE") {
       return res.status(400).json({
         success: false,
