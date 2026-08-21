@@ -52,8 +52,6 @@ const assignmentSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Automatically assigned by the backend.
-    // Admin does not choose a batch.
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
@@ -72,14 +70,12 @@ const assignmentSchema = new mongoose.Schema(
       min: 1,
     },
 
-    // Optional external link
     link: {
       type: String,
       default: "",
       trim: true,
     },
 
-    // Optional uploaded files
     files: {
       type: [assignmentFileSchema],
       default: [],

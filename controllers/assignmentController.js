@@ -4,6 +4,7 @@ const fs = require("fs");
 
 const Assignment = require("../models/Assignment");
 const Batch = require("../models/batch");
+const User = require("../models/user");
 
 const deleteLocalFile = (fileUrl) => {
   if (!fileUrl) return;
@@ -28,6 +29,8 @@ const deleteLocalFile = (fileUrl) => {
 };
 
 const deleteUploadedFiles = (files = []) => {
+  if (!Array.isArray(files)) return;
+
   files.forEach((file) => {
     if (file?.path && fs.existsSync(file.path)) {
       try {
@@ -40,6 +43,8 @@ const deleteUploadedFiles = (files = []) => {
 };
 
 const formatUploadedFiles = (files = []) => {
+  if (!Array.isArray(files)) return [];
+
   return files.map((file) => ({
     originalName: file.originalname,
     fileName: file.filename,
@@ -53,6 +58,12 @@ const getActiveBatch = async () => {
   return await Batch.findOne({
     status: "active",
   });
+};
+
+const getUserWithBatch = async (userId) => {
+  return await User.findById(userId)
+    .select("_id role batch batchHistory")
+    .lean();
 };
 
 const createAssignment = async (req, res) => {
@@ -126,24 +137,17 @@ const createAssignment = async (req, res) => {
 
     const assignment = await Assignment.create({
       title: title.trim(),
-
       description: description.trim(),
-
       instructorName: instructorName.trim(),
-
       batch: activeBatch._id,
-
       deadline,
-
       maxScore: Number(maxScore),
-
       link: link ? link.trim() : "",
-
       files: uploadedFiles,
     });
 
     const populatedAssignment = await Assignment.findById(assignment._id)
-      .populate("batch", "name status")
+      .populate("batch", "name status startDate endDate")
       .lean();
 
     return res.status(201).json({
@@ -172,9 +176,25 @@ const getAssignments = async (req, res) => {
       });
     }
 
-    if (req.user.role === "admin") {
-      const assignments = await Assignment.find()
-        .populate("batch", "name status")
+    const user = await getUserWithBatch(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    const role = String(user.role || "").toLowerCase();
+
+    console.log("GET ASSIGNMENTS");
+    console.log("User ID:", user._id.toString());
+    console.log("User role:", role);
+    console.log("User batch:", user.batch);
+
+    if (role === "admin") {
+      const assignments = await Assignment.find({})
+        .populate("batch", "name status startDate endDate")
         .sort({ createdAt: -1 })
         .lean();
 
@@ -185,27 +205,42 @@ const getAssignments = async (req, res) => {
       });
     }
 
-    if (req.user.role !== "student" && req.user.role !== "mentor") {
+    if (role !== "student" && role !== "mentor") {
       return res.status(403).json({
         success: false,
         message: "Invalid user role.",
       });
     }
 
-    if (!req.user.batch) {
+    if (!user.batch) {
       return res.status(200).json({
         success: true,
         count: 0,
         assignments: [],
+        message: "You are not assigned to a batch.",
+      });
+    }
+
+    const batchId = user.batch._id
+      ? user.batch._id.toString()
+      : user.batch.toString();
+
+    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Your assigned batch ID is invalid.",
       });
     }
 
     const assignments = await Assignment.find({
-      batch: req.user.batch,
+      batch: new mongoose.Types.ObjectId(batchId),
     })
-      .populate("batch", "name status")
+      .populate("batch", "name status startDate endDate")
       .sort({ createdAt: -1 })
       .lean();
+
+    console.log("Batch ID:", batchId);
+    console.log("Assignments found:", assignments.length);
 
     return res.status(200).json({
       success: true,
@@ -217,7 +252,7 @@ const getAssignments = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch assignments.",
+      message: error.message || "Failed to fetch assignments.",
     });
   }
 };
@@ -241,7 +276,7 @@ const getAssignment = async (req, res) => {
     }
 
     const assignment = await Assignment.findById(id)
-      .populate("batch", "name status")
+      .populate("batch", "name status startDate endDate")
       .lean();
 
     if (!assignment) {
@@ -251,14 +286,25 @@ const getAssignment = async (req, res) => {
       });
     }
 
-    if (req.user.role === "admin") {
+    const user = await getUserWithBatch(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    const role = String(user.role || "").toLowerCase();
+
+    if (role === "admin") {
       return res.status(200).json({
         success: true,
         assignment,
       });
     }
 
-    if (req.user.role !== "student" && req.user.role !== "mentor") {
+    if (role !== "student" && role !== "mentor") {
       return res.status(403).json({
         success: false,
         message: "Invalid user role.",
@@ -267,16 +313,27 @@ const getAssignment = async (req, res) => {
 
     const assignmentBatchId = assignment.batch?._id?.toString();
 
-    const currentBatchId = req.user.batch ? req.user.batch.toString() : null;
+    const currentBatchId = user.batch
+      ? user.batch._id
+        ? user.batch._id.toString()
+        : user.batch.toString()
+      : null;
 
     const belongsToCurrentBatch =
       currentBatchId &&
       assignmentBatchId &&
       currentBatchId === assignmentBatchId;
 
-    const belongsToHistoricalBatch = (req.user.batchHistory || []).some(
-      (history) =>
-        history.batch && history.batch.toString() === assignmentBatchId,
+    const belongsToHistoricalBatch = (user.batchHistory || []).some(
+      (history) => {
+        if (!history.batch) return false;
+
+        const historyBatchId = history.batch._id
+          ? history.batch._id.toString()
+          : history.batch.toString();
+
+        return historyBatchId === assignmentBatchId;
+      },
     );
 
     if (!belongsToCurrentBatch && !belongsToHistoricalBatch) {
@@ -309,9 +366,20 @@ const getAssignmentHistory = async (req, res) => {
       });
     }
 
-    if (req.user.role === "admin") {
-      const assignments = await Assignment.find()
-        .populate("batch", "name status")
+    const user = await getUserWithBatch(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    const role = String(user.role || "").toLowerCase();
+
+    if (role === "admin") {
+      const assignments = await Assignment.find({})
+        .populate("batch", "name status startDate endDate")
         .sort({ createdAt: -1 })
         .lean();
 
@@ -322,22 +390,24 @@ const getAssignmentHistory = async (req, res) => {
       });
     }
 
-    if (req.user.role !== "student" && req.user.role !== "mentor") {
+    if (role !== "student" && role !== "mentor") {
       return res.status(403).json({
         success: false,
         message: "Invalid user role.",
       });
     }
 
-    const historicalBatchIds = (req.user.batchHistory || [])
-      .filter(
-        (history) =>
-          history.batch &&
-          (history.role === "student" || history.role === "mentor"),
-      )
-      .map((history) => history.batch);
+    const historicalBatchIds = (user.batchHistory || [])
+      .filter((history) => history.batch)
+      .map((history) => {
+        return history.batch._id ? history.batch._id : history.batch;
+      });
 
-    if (historicalBatchIds.length === 0) {
+    const uniqueHistoricalBatchIds = [
+      ...new Set(historicalBatchIds.map((id) => id.toString())),
+    ];
+
+    if (uniqueHistoricalBatchIds.length === 0) {
       return res.status(200).json({
         success: true,
         count: 0,
@@ -345,11 +415,15 @@ const getAssignmentHistory = async (req, res) => {
       });
     }
 
-    const previousBatchIds = req.user.batch
-      ? historicalBatchIds.filter(
-          (batchId) => batchId.toString() !== req.user.batch.toString(),
-        )
-      : historicalBatchIds;
+    const currentBatchId = user.batch
+      ? user.batch._id
+        ? user.batch._id.toString()
+        : user.batch.toString()
+      : null;
+
+    const previousBatchIds = currentBatchId
+      ? uniqueHistoricalBatchIds.filter((id) => id !== currentBatchId)
+      : uniqueHistoricalBatchIds;
 
     if (previousBatchIds.length === 0) {
       return res.status(200).json({
@@ -361,10 +435,10 @@ const getAssignmentHistory = async (req, res) => {
 
     const assignments = await Assignment.find({
       batch: {
-        $in: previousBatchIds,
+        $in: previousBatchIds.map((id) => new mongoose.Types.ObjectId(id)),
       },
     })
-      .populate("batch", "name status")
+      .populate("batch", "name status startDate endDate")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -494,7 +568,7 @@ const updateAssignment = async (req, res) => {
     await assignment.save();
 
     const populatedAssignment = await Assignment.findById(assignment._id)
-      .populate("batch", "name status")
+      .populate("batch", "name status startDate endDate")
       .lean();
 
     return res.status(200).json({

@@ -10,6 +10,9 @@ const {
   getMentors,
   getMyStudents,
   getMyRiskStatus,
+  getStudentDashboard,
+  updateStudentRiskStatus,
+  getAtRiskStudents,
   getProfile,
   updateProfile,
   changeUserBatch,
@@ -61,6 +64,37 @@ router.get("/my-students", protect, authorize("mentor"), getMyStudents);
 // ============================================================
 
 router.get("/my-risk-status", protect, authorize("student"), getMyRiskStatus);
+
+// ============================================================
+// GET STUDENT DASHBOARD
+// STUDENT ONLY
+// ============================================================
+
+router.get(
+  "/student-dashboard",
+  protect,
+  authorize("student"),
+  getStudentDashboard,
+);
+
+// ============================================================
+// GET ALL AT-RISK STUDENTS
+// ADMIN ONLY
+// ============================================================
+
+router.get("/at-risk", protect, authorize("admin"), getAtRiskStudents);
+
+// ============================================================
+// UPDATE STUDENT AT-RISK STATUS
+// ADMIN ONLY
+// ============================================================
+
+router.patch(
+  "/:id/risk-status",
+  protect,
+  authorize("admin"),
+  updateStudentRiskStatus,
+);
 
 // ============================================================
 // ASSIGN MENTOR

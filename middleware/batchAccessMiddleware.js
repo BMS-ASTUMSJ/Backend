@@ -2,10 +2,6 @@ const mongoose = require("mongoose");
 
 const User = require("../models/user");
 
-// ============================================================
-// GET THE USER'S ROLE FOR A SPECIFIC BATCH
-// ============================================================
-
 const getBatchRole = async (userId, batchId) => {
   const user = await User.findById(userId).select("role batch batchHistory");
 
@@ -13,12 +9,10 @@ const getBatchRole = async (userId, batchId) => {
     return null;
   }
 
-  // Admin can access everything.
   if (user.role === "admin") {
     return "admin";
   }
 
-  // Check historical/current batch memberships.
   const membership = user.batchHistory?.find(
     (history) =>
       history.batch && history.batch.toString() === batchId.toString(),
@@ -28,18 +22,12 @@ const getBatchRole = async (userId, batchId) => {
     return membership.role;
   }
 
-  // Backward compatibility for users whose old records
-  // have a current batch but no batchHistory entry yet.
   if (user.batch && user.batch.toString() === batchId.toString()) {
     return user.role === "mentor" ? "mentor" : "student";
   }
 
   return null;
 };
-
-// ============================================================
-// REQUIRE BATCH ACCESS
-// ============================================================
 
 const requireBatchAccess = async (req, res, next) => {
   try {
@@ -75,10 +63,6 @@ const requireBatchAccess = async (req, res, next) => {
   }
 };
 
-// ============================================================
-// REQUIRE STUDENT ACCESS TO OWN RECORDS
-// ============================================================
-
 const requireStudentBatchAccess = async (req, res, next) => {
   try {
     const { batchId } = req.params;
@@ -101,7 +85,6 @@ const requireStudentBatchAccess = async (req, res, next) => {
       });
     }
 
-    // Admin has unrestricted access.
     if (user.role === "admin") {
       req.batchRole = "admin";
       req.batchId = batchId;
@@ -119,7 +102,6 @@ const requireStudentBatchAccess = async (req, res, next) => {
       return next();
     }
 
-    // Backward compatibility.
     if (
       user.batch &&
       user.batch.toString() === batchId.toString() &&
@@ -144,10 +126,6 @@ const requireStudentBatchAccess = async (req, res, next) => {
   }
 };
 
-// ============================================================
-// REQUIRE MENTOR ACCESS
-// ============================================================
-
 const requireMentorBatchAccess = async (req, res, next) => {
   try {
     const { batchId } = req.params;
@@ -170,7 +148,6 @@ const requireMentorBatchAccess = async (req, res, next) => {
       });
     }
 
-    // Admin can access everything.
     if (user.role === "admin") {
       req.batchRole = "admin";
       req.batchId = batchId;
@@ -190,7 +167,6 @@ const requireMentorBatchAccess = async (req, res, next) => {
       return next();
     }
 
-    // Backward compatibility.
     if (
       user.batch &&
       user.batch.toString() === batchId.toString() &&

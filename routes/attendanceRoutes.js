@@ -16,7 +16,6 @@ const authorize = require("../middleware/roleMiddleware");
 
 router.get("/my-team", protect, authorize("mentor"), getMentorStudents);
 
-// Now takes ?sessionId=... instead of ?date=&sessionType=&sessionName=
 router.get(
   "/team-records",
   protect,

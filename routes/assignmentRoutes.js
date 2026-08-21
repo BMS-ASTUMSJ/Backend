@@ -1,5 +1,7 @@
 const express = require("express");
 
+const router = express.Router();
+
 const {
   createAssignment,
   getAssignments,
@@ -10,57 +12,30 @@ const {
 } = require("../controllers/assignmentController");
 
 const protect = require("../middleware/authMiddleware");
-const authorize = require("../middleware/roleMiddleware");
-
-const uploadAssignmentFiles = require("../middleware/uploadMiddleware");
-
-const router = express.Router();
-
-// ============================================================
-// GET ASSIGNMENTS
-// ============================================================
+const authorize = require("../middleware/authorize");
+const upload = require("../middleware/upload");
 
 router.get("/", protect, getAssignments);
 
-// ============================================================
-// ASSIGNMENT HISTORY
-// ============================================================
-
 router.get("/history", protect, getAssignmentHistory);
 
-// ============================================================
-// GET SINGLE ASSIGNMENT
-// ============================================================
-
 router.get("/:id", protect, getAssignment);
-
-// ============================================================
-// CREATE ASSIGNMENT
-// ============================================================
 
 router.post(
   "/",
   protect,
   authorize("admin"),
-  uploadAssignmentFiles.array("files", 10),
+  upload.array("files", 10),
   createAssignment,
 );
 
-// ============================================================
-// UPDATE ASSIGNMENT
-// ============================================================
-
-router.patch(
+router.put(
   "/:id",
   protect,
   authorize("admin"),
-  uploadAssignmentFiles.array("files", 10),
+  upload.array("files", 10),
   updateAssignment,
 );
-
-// ============================================================
-// DELETE ASSIGNMENT
-// ============================================================
 
 router.delete("/:id", protect, authorize("admin"), deleteAssignment);
 

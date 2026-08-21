@@ -3,138 +3,155 @@ const Assignment = require("../models/Assignment");
 const Submission = require("../models/Submission");
 
 // ============================================================
-// AT RISK RULE
+// RISK RULES
 // ============================================================
-//
-// ATTENDANCE:
-// Absent = 1 issue
-// Late = 1 issue
-// Present = 0 issues
-// Excused = 0 issues
-//
-// ASSIGNMENTS:
-// No submission after deadline = 1 issue
-// Resubmission Required = 1 issue
-//
-// FINAL:
-// More than 2 total issues = AT RISK
-//
+
+const ABSENCE_THRESHOLD = 2;
+const MISSED_ASSIGNMENT_THRESHOLD = 2;
+
+// ============================================================
+// CALCULATE STUDENT RISK
 // ============================================================
 
 const calculateStudentRisk = async (studentId, batchId) => {
-  // ==========================================================
-  // ATTENDANCE ISSUES
-  // ==========================================================
+  try {
+    if (!studentId || !batchId) {
+      return {
+        attendanceIssues: 0,
+        assignmentIssues: 0,
+        totalIssues: 0,
+        isAtRisk: false,
+        reason: [],
+      };
+    }
 
-  const attendanceRecords = await Attendance.find({
-    studentId,
-    batchId,
-  }).select("firstCheck secondCheck");
+    // ========================================================
+    // ATTENDANCE
+    //
+    // Count each attendance check marked as Absent.
+    // firstCheck Absent = 1 absence
+    // secondCheck Absent = 1 absence
+    // ========================================================
 
-  let attendanceIssues = 0;
+    const attendanceRecords = await Attendance.find({
+      studentId,
+      batchId,
+    }).select("firstCheck secondCheck");
 
-  attendanceRecords.forEach((record) => {
-    const checks = [record.firstCheck, record.secondCheck];
+    let absenceCount = 0;
 
-    checks.forEach((check) => {
-      if (!check || !check.status) {
-        return;
+    attendanceRecords.forEach((record) => {
+      if (record.firstCheck?.status === "Absent") {
+        absenceCount += 1;
       }
 
-      if (check.status === "Absent" || check.status === "Late") {
-        attendanceIssues += 1;
+      if (record.secondCheck?.status === "Absent") {
+        absenceCount += 1;
       }
     });
-  });
 
-  // ==========================================================
-  // ASSIGNMENT ISSUES
-  // ==========================================================
+    // ========================================================
+    // ASSIGNMENTS
+    //
+    // Get all assignments for this batch
+    // ========================================================
 
-  const assignments = await Assignment.find({
-    batch: batchId,
-  }).select("_id deadline");
+    const assignments = await Assignment.find({
+      batch: batchId,
+    }).select("_id deadline");
 
-  const assignmentIds = assignments.map((assignment) => assignment._id);
+    // Get all assignments submitted by this student
+    const submissions = await Submission.find({
+      student: studentId,
+      assignment: {
+        $in: assignments.map((assignment) => assignment._id),
+      },
+    }).select("assignment");
 
-  const submissions =
-    assignmentIds.length > 0
-      ? await Submission.find({
-          student: studentId,
-          assignment: {
-            $in: assignmentIds,
-          },
-        }).select("assignment status")
-      : [];
+    const submittedAssignmentIds = new Set(
+      submissions.map((submission) => String(submission.assignment)),
+    );
 
-  const submissionMap = new Map();
+    const now = new Date();
 
-  submissions.forEach((submission) => {
-    submissionMap.set(String(submission.assignment), submission);
-  });
+    // ========================================================
+    // MISSED ASSIGNMENTS
+    //
+    // An assignment counts as missed only when:
+    // 1. Deadline has passed
+    // 2. Student did not submit
+    // ========================================================
 
-  let assignmentIssues = 0;
+    const missedAssignments = assignments.filter((assignment) => {
+      const deadlinePassed = new Date(assignment.deadline) < now;
 
-  const now = new Date();
+      const wasSubmitted = submittedAssignmentIds.has(String(assignment._id));
 
-  assignments.forEach((assignment) => {
-    const submission = submissionMap.get(String(assignment._id));
+      return deadlinePassed && !wasSubmitted;
+    });
 
-    // --------------------------------------------------------
-    // NO SUBMISSION AFTER DEADLINE
-    // --------------------------------------------------------
+    const missedAssignmentCount = missedAssignments.length;
 
-    if (!submission) {
-      if (assignment.deadline && now > new Date(assignment.deadline)) {
-        assignmentIssues += 1;
-      }
+    // ========================================================
+    // DETERMINE RISK
+    //
+    // Student is at risk if:
+    // - 2 or more absences
+    // OR
+    // - 2 or more missed assignments
+    // ========================================================
 
-      return;
+    const attendanceAtRisk = absenceCount >= ABSENCE_THRESHOLD;
+
+    const assignmentAtRisk =
+      missedAssignmentCount >= MISSED_ASSIGNMENT_THRESHOLD;
+
+    const isAtRisk = attendanceAtRisk || assignmentAtRisk;
+
+    const reason = [];
+
+    if (attendanceAtRisk) {
+      reason.push(`${absenceCount} absence${absenceCount === 1 ? "" : "s"}`);
     }
 
-    // --------------------------------------------------------
-    // RESUBMISSION REQUIRED
-    // --------------------------------------------------------
-
-    if (submission.status === "Resubmission Required") {
-      assignmentIssues += 1;
+    if (assignmentAtRisk) {
+      reason.push(
+        `${missedAssignmentCount} missed assignment${
+          missedAssignmentCount === 1 ? "" : "s"
+        }`,
+      );
     }
-  });
 
-  // ==========================================================
-  // FINAL RISK CALCULATION
-  // ==========================================================
+    return {
+      attendanceIssues: absenceCount,
 
-  const totalIssues = attendanceIssues + assignmentIssues;
+      assignmentIssues: missedAssignmentCount,
 
-  const isAtRisk = totalIssues > 2;
+      totalIssues: absenceCount + missedAssignmentCount,
 
-  return {
-    attendanceIssues,
-    assignmentIssues,
-    totalIssues,
-    isAtRisk,
-  };
-};
+      absenceCount,
 
-// ============================================================
-// CALCULATE RISK FOR MULTIPLE STUDENTS
-// ============================================================
+      missedAssignmentCount,
 
-const calculateStudentsRisk = async (students, batchId) => {
-  return await Promise.all(
-    students.map(async (student) => {
-      const risk = await calculateStudentRisk(student._id, batchId);
+      attendanceAtRisk,
 
-      return {
-        studentId: student._id,
-        ...risk,
-      };
-    }),
-  );
+      assignmentAtRisk,
+
+      isAtRisk,
+
+      reason,
+
+      message: isAtRisk
+        ? `Student is at risk due to ${reason.join(" and ")}.`
+        : "Student is currently on track.",
+    };
+  } catch (error) {
+    console.error("CALCULATE STUDENT RISK ERROR:", error);
+
+    throw error;
+  }
 };
 
 module.exports = {
   calculateStudentRisk,
-  calculateStudentsRisk,
 };

@@ -13,27 +13,11 @@ const {
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
-// ============================================================
-// STUDENT - FIRST SUBMISSION / RESUBMISSION
-// ============================================================
-
 router.post("/", protect, authorize("student"), submitAssignment);
-
-// ============================================================
-// STUDENT - UPDATE PENDING SUBMISSION
-// ============================================================
 
 router.put("/:id", protect, authorize("student"), updateSubmission);
 
-// ============================================================
-// STUDENT - MY SUBMISSIONS
-// ============================================================
-
 router.get("/my", protect, authorize("student"), getMySubmissions);
-
-// ============================================================
-// MENTOR / ADMIN - GET SUBMISSIONS
-// ============================================================
 
 router.get(
   "/assignment/:assignmentId",
@@ -41,10 +25,6 @@ router.get(
   authorize("mentor", "admin"),
   getSubmissionsByAssignment,
 );
-
-// ============================================================
-// MENTOR - GRADE / REQUEST RESUBMISSION
-// ============================================================
 
 router.put("/grade/:id", protect, authorize("mentor"), gradeSubmission);
 

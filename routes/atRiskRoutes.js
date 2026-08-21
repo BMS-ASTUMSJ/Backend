@@ -10,15 +10,7 @@ const {
   getBatchAtRiskStudents,
 } = require("../controllers/atRiskController");
 
-// ============================================================
-// STUDENT - GET MY RISK STATUS
-// ============================================================
-
 router.get("/my-status", protect, authorize("student"), getMyRiskStatus);
-
-// ============================================================
-// ADMIN - GET AT RISK STUDENTS FOR A BATCH
-// ============================================================
 
 router.get(
   "/batch/:batchId",

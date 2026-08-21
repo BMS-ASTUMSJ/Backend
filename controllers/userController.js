@@ -5,21 +5,6 @@ const crypto = require("crypto");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
-let Team;
-let Applicant;
-
-try {
-  Team = require("../models/team");
-} catch (error) {
-  Team = null;
-}
-
-try {
-  Applicant = require("../models/applicant");
-} catch (error) {
-  Applicant = null;
-}
-
 let sendEmail;
 
 try {
@@ -28,6 +13,10 @@ try {
 } catch (error) {
   sendEmail = null;
 }
+
+// ============================================================
+// CREATE USER
+// ============================================================
 
 const createUser = async (req, res) => {
   try {
@@ -110,6 +99,7 @@ const createUser = async (req, res) => {
       role,
       mustChangePassword: true,
 
+      // Student risk status
       atRisk: false,
     });
 
@@ -156,6 +146,7 @@ const createUser = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: `${role} account created successfully.`,
+
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -178,6 +169,10 @@ const createUser = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// UPDATE USER STATUS
+// ============================================================
 
 const updateUserStatus = async (req, res) => {
   try {
@@ -238,6 +233,10 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
+// ============================================================
+// ASSIGN MENTOR
+// ============================================================
+
 const assignMentor = async (req, res) => {
   try {
     const { studentId, mentorIds } = req.body;
@@ -245,7 +244,14 @@ const assignMentor = async (req, res) => {
     if (!studentId || !Array.isArray(mentorIds) || mentorIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Student and Mentors are required",
+        message: "Student and mentors are required",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid student ID",
       });
     }
 
@@ -258,13 +264,15 @@ const assignMentor = async (req, res) => {
       });
     }
 
+    const uniqueMentorIds = [...new Set(mentorIds.map(String))];
+
     const mentors = await User.find({
-      _id: { $in: mentorIds },
+      _id: { $in: uniqueMentorIds },
       role: "mentor",
       status: "approved",
     });
 
-    if (mentors.length !== mentorIds.length) {
+    if (mentors.length !== uniqueMentorIds.length) {
       return res.status(400).json({
         success: false,
         message: "One or more mentors are invalid or suspended",
@@ -278,19 +286,51 @@ const assignMentor = async (req, res) => {
           message: `Gender mismatch: ${student.gender} student cannot have ${mentor.gender} mentor`,
         });
       }
+
+      if (
+        student.batch &&
+        mentor.batch &&
+        student.batch.toString() !== mentor.batch.toString()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `${mentor.firstName} is not in the same batch as the student`,
+        });
+      }
     }
 
-    await User.findByIdAndUpdate(studentId, {
-      assignedMentors: mentorIds,
-    });
+    const oldMentorIds = (student.assignedMentors || []).map((id) =>
+      id.toString(),
+    );
+
+    const removedMentorIds = oldMentorIds.filter(
+      (oldId) => !uniqueMentorIds.includes(oldId),
+    );
+
+    if (removedMentorIds.length > 0) {
+      await User.updateMany(
+        {
+          _id: { $in: removedMentorIds },
+        },
+        {
+          $pull: {
+            assignedStudents: student._id,
+          },
+        },
+      );
+    }
+
+    student.assignedMentors = uniqueMentorIds;
+
+    await student.save();
 
     await User.updateMany(
       {
-        _id: { $in: mentorIds },
+        _id: { $in: uniqueMentorIds },
       },
       {
         $addToSet: {
-          assignedStudents: studentId,
+          assignedStudents: student._id,
         },
       },
     );
@@ -309,9 +349,14 @@ const assignMentor = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET STUDENTS
+// ADMIN ONLY
+// ============================================================
+
 const getStudents = async (req, res) => {
   try {
-    const { gender, batchId, status } = req.query;
+    const { gender, batchId, status, atRisk } = req.query;
 
     const filter = {
       role: "student",
@@ -336,6 +381,14 @@ const getStudents = async (req, res) => {
       filter.status = status;
     }
 
+    if (atRisk === "true") {
+      filter.atRisk = true;
+    }
+
+    if (atRisk === "false") {
+      filter.atRisk = false;
+    }
+
     const students = await User.find(filter)
       .select("-password")
       .populate("assignedMentors", "firstName lastName email gender phone")
@@ -358,6 +411,11 @@ const getStudents = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// GET MENTORS
+// ADMIN ONLY
+// ============================================================
 
 const getMentors = async (req, res) => {
   try {
@@ -390,7 +448,7 @@ const getMentors = async (req, res) => {
       .select("-password")
       .populate(
         "assignedStudents",
-        "firstName lastName email gender phone atRisk",
+        "firstName lastName email gender phone atRisk batch",
       )
       .populate("batch", "name status startDate endDate")
       .sort({
@@ -411,6 +469,11 @@ const getMentors = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// GET MY STUDENTS
+// MENTOR ONLY
+// ============================================================
 
 const getMyStudents = async (req, res) => {
   try {
@@ -459,6 +522,11 @@ const getMyStudents = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET MY AT-RISK STATUS
+// STUDENT ONLY
+// ============================================================
+
 const getMyRiskStatus = async (req, res) => {
   try {
     if (req.user.role !== "student") {
@@ -481,7 +549,6 @@ const getMyRiskStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-
       atRisk: Boolean(student.atRisk),
 
       student: {
@@ -502,6 +569,174 @@ const getMyRiskStatus = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// GET STUDENT DASHBOARD
+// STUDENT ONLY
+// ============================================================
+
+const getStudentDashboard = async (req, res) => {
+  try {
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can access the student dashboard",
+      });
+    }
+
+    const student = await User.findById(req.user._id)
+      .select("_id firstName lastName email role atRisk batch assignedMentors")
+      .populate("batch", "name status startDate endDate description")
+      .populate("assignedMentors", "firstName lastName email gender phone");
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+
+      student: {
+        _id: student._id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        email: student.email,
+        role: student.role,
+        atRisk: Boolean(student.atRisk),
+        batch: student.batch,
+        assignedMentors: student.assignedMentors,
+      },
+    });
+  } catch (error) {
+    console.error("Get student dashboard error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching student dashboard",
+    });
+  }
+};
+
+// ============================================================
+// UPDATE STUDENT AT-RISK STATUS
+// ADMIN ONLY
+// ============================================================
+
+const updateStudentRiskStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { atRisk } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid student ID",
+      });
+    }
+
+    if (typeof atRisk !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "atRisk must be true or false",
+      });
+    }
+
+    const student = await User.findOne({
+      _id: id,
+      role: "student",
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    student.atRisk = atRisk;
+
+    await student.save();
+
+    return res.status(200).json({
+      success: true,
+
+      message: atRisk
+        ? "Student marked as at-risk"
+        : "Student removed from at-risk status",
+
+      student: {
+        _id: student._id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        email: student.email,
+        atRisk: student.atRisk,
+      },
+    });
+  } catch (error) {
+    console.error("Update student risk status error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error updating student risk status",
+    });
+  }
+};
+
+// ============================================================
+// GET ALL AT-RISK STUDENTS
+// ADMIN ONLY
+// ============================================================
+
+const getAtRiskStudents = async (req, res) => {
+  try {
+    const { batchId } = req.query;
+
+    const filter = {
+      role: "student",
+      atRisk: true,
+    };
+
+    if (batchId) {
+      if (!mongoose.Types.ObjectId.isValid(batchId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid batch ID",
+        });
+      }
+
+      filter.batch = batchId;
+    }
+
+    const students = await User.find(filter)
+      .select("-password")
+      .populate("batch", "name status startDate endDate")
+      .populate("assignedMentors", "firstName lastName email phone")
+      .sort({
+        firstName: 1,
+        lastName: 1,
+      });
+
+    return res.status(200).json({
+      success: true,
+      count: students.length,
+      students,
+    });
+  } catch (error) {
+    console.error("Get at-risk students error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching at-risk students",
+    });
+  }
+};
+
+// ============================================================
+// DELETE USER
+// ============================================================
 
 const deleteUser = async (req, res) => {
   try {
@@ -530,6 +765,28 @@ const deleteUser = async (req, res) => {
       });
     }
 
+    if (user.role === "student") {
+      await User.updateMany(
+        {},
+        {
+          $pull: {
+            assignedStudents: user._id,
+          },
+        },
+      );
+    }
+
+    if (user.role === "mentor") {
+      await User.updateMany(
+        {},
+        {
+          $pull: {
+            assignedMentors: user._id,
+          },
+        },
+      );
+    }
+
     await User.findByIdAndDelete(id);
 
     return res.status(200).json({
@@ -546,11 +803,17 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET BLACKLISTED USERS
+// ============================================================
+
 const getBlacklistedUsers = async (req, res) => {
   try {
     const users = await User.find({
       status: "suspended",
-    }).select("-password");
+    })
+      .select("-password")
+      .populate("batch", "name");
 
     return res.status(200).json({
       success: true,
@@ -566,6 +829,10 @@ const getBlacklistedUsers = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// GET PROFILE
+// ============================================================
 
 const getProfile = async (req, res) => {
   try {
@@ -596,6 +863,10 @@ const getProfile = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// UPDATE PROFILE
+// ============================================================
 
 const updateProfile = async (req, res) => {
   try {
@@ -685,6 +956,10 @@ const updateProfile = async (req, res) => {
   }
 };
 
+// ============================================================
+// CHANGE USER BATCH / ROLE
+// ============================================================
+
 const changeUserBatch = async (req, res) => {
   try {
     const { id } = req.params;
@@ -697,7 +972,7 @@ const changeUserBatch = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+    if (!batchId || !mongoose.Types.ObjectId.isValid(batchId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID",
@@ -736,6 +1011,8 @@ const changeUserBatch = async (req, res) => {
       });
     }
 
+    const oldRole = user.role;
+
     user.batch = batch._id;
     user.role = role;
 
@@ -755,6 +1032,32 @@ const changeUserBatch = async (req, res) => {
       });
     } else {
       user.batchHistory[existingHistoryIndex].role = role;
+    }
+
+    if (oldRole === "student" && role === "mentor") {
+      await User.updateMany(
+        {},
+        {
+          $pull: {
+            assignedStudents: user._id,
+          },
+        },
+      );
+
+      user.assignedMentors = [];
+    }
+
+    if (oldRole === "mentor" && role === "student") {
+      await User.updateMany(
+        {},
+        {
+          $pull: {
+            assignedMentors: user._id,
+          },
+        },
+      );
+
+      user.assignedStudents = [];
     }
 
     await user.save();
@@ -782,20 +1085,29 @@ const changeUserBatch = async (req, res) => {
   }
 };
 
+// ============================================================
+// EXPORTS
+// ============================================================
+
 module.exports = {
   createUser,
   updateUserStatus,
   assignMentor,
+
   getStudents,
   getMentors,
-
   getMyStudents,
 
   getMyRiskStatus,
+  getStudentDashboard,
+  updateStudentRiskStatus,
+  getAtRiskStudents,
 
   deleteUser,
   getBlacklistedUsers,
+
   getProfile,
   updateProfile,
+
   changeUserBatch,
 };

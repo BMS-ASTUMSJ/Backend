@@ -19,12 +19,7 @@ const TOPICS = [
   "Git / GitHub",
 ];
 
-const STATUSES = [
-  "not_started",
-  "in_progress",
-  "done",
-  "needs_help",
-];
+const STATUSES = ["not_started", "in_progress", "done", "needs_help"];
 
 // ======================================================
 // STATUS NORMALIZER
@@ -93,9 +88,7 @@ const validateObjectId = (id, name) => {
 // ======================================================
 
 const getStudentBatchIds = async (studentId) => {
-  const student = await User.findById(studentId).select(
-    "batch batchHistory"
-  );
+  const student = await User.findById(studentId).select("batch batchHistory");
 
   if (!student) {
     throw new Error("Student not found");
@@ -108,10 +101,7 @@ const getStudentBatchIds = async (studentId) => {
   }
 
   for (const history of student.batchHistory || []) {
-    if (
-      history.batch &&
-      !batchIds.includes(history.batch.toString())
-    ) {
+    if (history.batch && !batchIds.includes(history.batch.toString())) {
       batchIds.push(history.batch.toString());
     }
   }
@@ -123,24 +113,17 @@ const getStudentBatchIds = async (studentId) => {
 // GET SELECTED STUDENT BATCH
 // ======================================================
 
-const getSelectedStudentBatch = async (
-  studentId,
-  batchId
-) => {
+const getSelectedStudentBatch = async (studentId, batchId) => {
   const batches = await getStudentBatchIds(studentId);
 
   const selectedBatch = batchId || batches[0];
 
   if (!selectedBatch) {
-    throw new Error(
-      "No batch assigned to this student"
-    );
+    throw new Error("No batch assigned to this student");
   }
 
   if (!batches.includes(selectedBatch.toString())) {
-    throw new Error(
-      "You do not have access to this batch"
-    );
+    throw new Error("You do not have access to this batch");
   }
 
   return selectedBatch;
@@ -159,9 +142,9 @@ const isCompleted = (progress) => {
 
   return Boolean(
     status === "done" ||
-      progress.completedAt ||
-      progress.watched ||
-      progress.submissionLink
+    progress.completedAt ||
+    progress.watched ||
+    progress.submissionLink,
   );
 };
 
@@ -170,16 +153,7 @@ const isCompleted = (progress) => {
 // ======================================================
 
 const createProgressContent = async (data) => {
-  const {
-    batch,
-    batchId,
-    type,
-    topic,
-    week,
-    title,
-    link,
-    publishedBy,
-  } = data;
+  const { batch, batchId, type, topic, week, title, link, publishedBy } = data;
 
   if (!["cp", "dev"].includes(type)) {
     throw new Error("Type must be cp or dev");
@@ -213,10 +187,7 @@ const createProgressContent = async (data) => {
 
   const weekNumber = Number(week);
 
-  if (
-    !Number.isInteger(weekNumber) ||
-    weekNumber < 1
-  ) {
+  if (!Number.isInteger(weekNumber) || weekNumber < 1) {
     throw new Error("Week must be a valid number");
   }
 
@@ -236,12 +207,7 @@ const createProgressContent = async (data) => {
 // GET PROGRESS CONTENT
 // ======================================================
 
-const getProgressContent = async (
-  type,
-  week,
-  batchId,
-  topic
-) => {
+const getProgressContent = async (type, week, batchId, topic) => {
   const filter = {
     isPublished: true,
   };
@@ -264,10 +230,7 @@ const getProgressContent = async (
 
   return ProgressContent.find(filter)
     .populate("batch", "name status")
-    .populate(
-      "publishedBy",
-      "firstName lastName email"
-    )
+    .populate("publishedBy", "firstName lastName email")
     .sort({
       type: 1,
       week: 1,
@@ -282,14 +245,9 @@ const getProgressContent = async (
 const getContentById = async (contentId) => {
   validateObjectId(contentId, "content ID");
 
-  const content = await ProgressContent.findById(
-    contentId
-  )
+  const content = await ProgressContent.findById(contentId)
     .populate("batch", "name status")
-    .populate(
-      "publishedBy",
-      "firstName lastName email"
-    );
+    .populate("publishedBy", "firstName lastName email");
 
   if (!content) {
     throw new Error("Progress content not found");
@@ -302,18 +260,8 @@ const getContentById = async (contentId) => {
 // GET STUDENT PROGRESS
 // ======================================================
 
-const getStudentProgress = async (
-  studentId,
-  type,
-  week,
-  batchId,
-  topic
-) => {
-  const selectedBatch =
-    await getSelectedStudentBatch(
-      studentId,
-      batchId
-    );
+const getStudentProgress = async (studentId, type, week, batchId, topic) => {
+  const selectedBatch = await getSelectedStudentBatch(studentId, batchId);
 
   const contentFilter = {
     batch: selectedBatch,
@@ -332,17 +280,13 @@ const getStudentProgress = async (
     contentFilter.week = Number(week);
   }
 
-  const contents = await ProgressContent.find(
-    contentFilter
-  ).sort({
+  const contents = await ProgressContent.find(contentFilter).sort({
     type: 1,
     week: 1,
     createdAt: 1,
   });
 
-  const contentIds = contents.map(
-    (item) => item._id
-  );
+  const contentIds = contents.map((item) => item._id);
 
   if (contentIds.length === 0) {
     return [];
@@ -355,26 +299,15 @@ const getStudentProgress = async (
       $in: contentIds,
     },
   })
-    .populate(
-      "updatedBy",
-      "firstName lastName"
-    )
-    .populate(
-      "content",
-      "type topic week title link"
-    );
+    .populate("updatedBy", "firstName lastName")
+    .populate("content", "type topic week title link");
 
   const recordMap = new Map(
-    records.map((record) => [
-      record.content._id.toString(),
-      record,
-    ])
+    records.map((record) => [record.content._id.toString(), record]),
   );
 
   return contents.map((content) => {
-    const existing = recordMap.get(
-      content._id.toString()
-    );
+    const existing = recordMap.get(content._id.toString());
 
     if (!existing) {
       return {
@@ -390,21 +323,15 @@ const getStudentProgress = async (
       };
     }
 
-    const progress =
-      existing.toObject();
+    const progress = existing.toObject();
 
-    progress.status =
-      normalizeStatus(progress.status) ||
-      "not_started";
+    progress.status = normalizeStatus(progress.status) || "not_started";
 
-    progress.displayStatus =
-      displayStatus(progress.status);
+    progress.displayStatus = displayStatus(progress.status);
 
-    progress.mentorNote =
-      progress.mentorNote || "";
+    progress.mentorNote = progress.mentorNote || "";
 
-    progress.note =
-      progress.mentorNote;
+    progress.note = progress.mentorNote;
 
     return {
       content,
@@ -417,67 +344,42 @@ const getStudentProgress = async (
 // UPDATE STUDENT PROGRESS
 // ======================================================
 
-const updateStudentProgress = async (
-  studentId,
-  contentId,
-  data
-) => {
-  validateObjectId(
-    studentId,
-    "student ID"
-  );
+const updateStudentProgress = async (studentId, contentId, data) => {
+  validateObjectId(studentId, "student ID");
 
-  validateObjectId(
-    contentId,
-    "content ID"
-  );
+  validateObjectId(contentId, "content ID");
 
   const student = await User.findOne({
     _id: studentId,
     role: "student",
-  }).select(
-    "firstName lastName email gender batch"
-  );
+  }).select("firstName lastName email gender batch");
 
   if (!student) {
     throw new Error("Student not found");
   }
 
   if (!student.batch) {
-    throw new Error(
-      "You are not assigned to a batch"
-    );
+    throw new Error("You are not assigned to a batch");
   }
 
-  const content =
-    await ProgressContent.findOne({
-      _id: contentId,
-      isPublished: true,
-    });
+  const content = await ProgressContent.findOne({
+    _id: contentId,
+    isPublished: true,
+  });
 
   if (!content) {
-    throw new Error(
-      "Progress content not found"
-    );
+    throw new Error("Progress content not found");
   }
 
-  if (
-    student.batch.toString() !==
-    content.batch.toString()
-  ) {
-    throw new Error(
-      "This content is not assigned to your batch"
-    );
+  if (student.batch.toString() !== content.batch.toString()) {
+    throw new Error("This content is not assigned to your batch");
   }
 
-  const normalizedStatus =
-    normalizeStatus(data?.status);
+  const normalizedStatus = normalizeStatus(data?.status);
 
   if (!normalizedStatus) {
     throw new Error(
-      `Invalid progress status. Allowed statuses: ${STATUSES.join(
-        ", "
-      )}`
+      `Invalid progress status. Allowed statuses: ${STATUSES.join(", ")}`,
     );
   }
 
@@ -485,12 +387,11 @@ const updateStudentProgress = async (
   // FIND FIRST
   // ====================================================
 
-  let progress =
-    await StudentProgress.findOne({
-      student: student._id,
-      batch: content.batch,
-      content: content._id,
-    });
+  let progress = await StudentProgress.findOne({
+    student: student._id,
+    batch: content.batch,
+    content: content._id,
+  });
 
   // ====================================================
   // CREATE
@@ -509,66 +410,42 @@ const updateStudentProgress = async (
 
       updatedBy: student._id,
 
-      completedAt:
-        normalizedStatus === "done"
-          ? new Date()
-          : null,
+      completedAt: normalizedStatus === "done" ? new Date() : null,
     });
   } else {
     // ==================================================
     // UPDATE
     // ==================================================
 
-    progress.type =
-      content.type;
+    progress.type = content.type;
 
-    progress.topic =
-      content.topic;
+    progress.topic = content.topic;
 
-    progress.status =
-      normalizedStatus;
+    progress.status = normalizedStatus;
 
-    progress.updatedBy =
-      student._id;
+    progress.updatedBy = student._id;
 
     progress.completedAt =
-      normalizedStatus === "done"
-        ? progress.completedAt ||
-          new Date()
-        : null;
+      normalizedStatus === "done" ? progress.completedAt || new Date() : null;
   }
 
   // ====================================================
   // SUBMISSION LINK
   // ====================================================
 
-  if (
-    data?.submissionLink !==
-    undefined
-  ) {
-    progress.submissionLink =
-      String(
-        data.submissionLink
-      ).trim();
+  if (data?.submissionLink !== undefined) {
+    progress.submissionLink = String(data.submissionLink).trim();
   }
 
   // ====================================================
   // ATTEMPTS
   // ====================================================
 
-  if (
-    data?.attempts !==
-    undefined
-  ) {
-    const attempts =
-      Number(data.attempts);
+  if (data?.attempts !== undefined) {
+    const attempts = Number(data.attempts);
 
-    if (
-      Number.isInteger(attempts) &&
-      attempts >= 0
-    ) {
-      progress.attempts =
-        attempts;
+    if (Number.isInteger(attempts) && attempts >= 0) {
+      progress.attempts = attempts;
     }
   }
 
@@ -576,19 +453,11 @@ const updateStudentProgress = async (
   // TIME SPENT
   // ====================================================
 
-  if (
-    data?.timeSpent !==
-    undefined
-  ) {
-    const timeSpent =
-      Number(data.timeSpent);
+  if (data?.timeSpent !== undefined) {
+    const timeSpent = Number(data.timeSpent);
 
-    if (
-      Number.isFinite(timeSpent) &&
-      timeSpent >= 0
-    ) {
-      progress.timeSpent =
-        timeSpent;
+    if (Number.isFinite(timeSpent) && timeSpent >= 0) {
+      progress.timeSpent = timeSpent;
     }
   }
 
@@ -596,39 +465,21 @@ const updateStudentProgress = async (
   // WATCHED
   // ====================================================
 
-  if (
-    data?.watched !==
-    undefined
-  ) {
-    progress.watched =
-      Boolean(data.watched);
+  if (data?.watched !== undefined) {
+    progress.watched = Boolean(data.watched);
   }
 
   // ====================================================
   // MENTOR NOTE
   // ====================================================
 
-  if (
-    data?.mentorNote !==
-    undefined
-  ) {
-    progress.mentorNote =
-      String(
-        data.mentorNote
-      )
-        .trim()
-        .slice(0, 1000);
+  if (data?.mentorNote !== undefined) {
+    progress.mentorNote = String(data.mentorNote).trim().slice(0, 1000);
   }
 
   // Backwards compatibility
-  if (
-    data?.note !==
-    undefined
-  ) {
-    progress.mentorNote =
-      String(data.note)
-        .trim()
-        .slice(0, 1000);
+  if (data?.note !== undefined) {
+    progress.mentorNote = String(data.note).trim().slice(0, 1000);
   }
 
   // ====================================================
@@ -642,43 +493,26 @@ const updateStudentProgress = async (
     // record at the same time, retrieve the existing one
     // instead of crashing with 11000.
     if (error.code === 11000) {
-      progress =
-        await StudentProgress.findOne({
-          student: student._id,
-          batch: content.batch,
-          content: content._id,
-        });
+      progress = await StudentProgress.findOne({
+        student: student._id,
+        batch: content.batch,
+        content: content._id,
+      });
 
       if (!progress) {
         throw error;
       }
 
-      progress.status =
-        normalizedStatus;
+      progress.status = normalizedStatus;
 
-      progress.updatedBy =
-        student._id;
+      progress.updatedBy = student._id;
 
-      if (
-        data?.mentorNote !==
-        undefined
-      ) {
-        progress.mentorNote =
-          String(
-            data.mentorNote
-          )
-            .trim()
-            .slice(0, 1000);
+      if (data?.mentorNote !== undefined) {
+        progress.mentorNote = String(data.mentorNote).trim().slice(0, 1000);
       }
 
-      if (
-        data?.note !==
-        undefined
-      ) {
-        progress.mentorNote =
-          String(data.note)
-            .trim()
-            .slice(0, 1000);
+      if (data?.note !== undefined) {
+        progress.mentorNote = String(data.note).trim().slice(0, 1000);
       }
 
       await progress.save();
@@ -694,38 +528,27 @@ const updateStudentProgress = async (
   await progress.populate([
     {
       path: "student",
-      select:
-        "firstName lastName email gender",
+      select: "firstName lastName email gender",
     },
 
     {
       path: "content",
-      select:
-        "type topic week title link",
+      select: "type topic week title link",
     },
 
     {
       path: "updatedBy",
-      select:
-        "firstName lastName",
+      select: "firstName lastName",
     },
   ]);
 
-  const result =
-    progress.toObject();
+  const result = progress.toObject();
 
-  result.status =
-    normalizeStatus(
-      result.status
-    );
+  result.status = normalizeStatus(result.status);
 
-  result.displayStatus =
-    displayStatus(
-      result.status
-    );
+  result.displayStatus = displayStatus(result.status);
 
-  result.note =
-    result.mentorNote || "";
+  result.note = result.mentorNote || "";
 
   return result;
 };
@@ -734,55 +557,34 @@ const updateStudentProgress = async (
 // COMPATIBILITY ALIAS
 // ======================================================
 
-const updateStudentOwnProgress =
-  updateStudentProgress;
+const updateStudentOwnProgress = updateStudentProgress;
 
 // ======================================================
 // STUDENT SUMMARY
 // ======================================================
 
-const getStudentSummary = async (
-  studentId,
-  type,
-  week,
-  batchId,
-  topic
-) => {
-  const progressList =
-    await getStudentProgress(
-      studentId,
-      type,
-      week,
-      batchId,
-      topic
-    );
+const getStudentSummary = async (studentId, type, week, batchId, topic) => {
+  const progressList = await getStudentProgress(
+    studentId,
+    type,
+    week,
+    batchId,
+    topic,
+  );
 
-  const completed =
-    progressList.filter(
-      (item) =>
-        isCompleted(
-          item.progress
-        )
-    ).length;
+  const completed = progressList.filter((item) =>
+    isCompleted(item.progress),
+  ).length;
 
-  const needsHelp =
-    progressList.filter(
-      (item) =>
-        normalizeStatus(
-          item.progress?.status
-        ) === "needs_help"
-    ).length;
+  const needsHelp = progressList.filter(
+    (item) => normalizeStatus(item.progress?.status) === "needs_help",
+  ).length;
 
-  const inProgress =
-    progressList.filter(
-      (item) =>
-        normalizeStatus(
-          item.progress?.status
-        ) === "in_progress"
-    ).length;
+  const inProgress = progressList.filter(
+    (item) => normalizeStatus(item.progress?.status) === "in_progress",
+  ).length;
 
-  const total =
-    progressList.length;
+  const total = progressList.length;
 
   return {
     total,
@@ -790,11 +592,7 @@ const getStudentSummary = async (
     needsHelp,
     inProgress,
 
-    completion: total
-      ? Math.round(
-          (completed / total) * 100
-        )
-      : 0,
+    completion: total ? Math.round((completed / total) * 100) : 0,
   };
 };
 
@@ -802,75 +600,44 @@ const getStudentSummary = async (
 // STUDENT RANK
 // ======================================================
 
-const getStudentRank = async (
-  studentId,
-  type,
-  week,
-  batchId,
-  topic
-) => {
-  const selectedBatch =
-    await getSelectedStudentBatch(
-      studentId,
-      batchId
-    );
+const getStudentRank = async (studentId, type, week, batchId, topic) => {
+  const selectedBatch = await getSelectedStudentBatch(studentId, batchId);
 
-  const students =
-    await User.find({
-      role: "student",
-      batch: selectedBatch,
-    }).select("_id");
+  const students = await User.find({
+    role: "student",
+    batch: selectedBatch,
+  }).select("_id");
 
-  const rankings =
-    await Promise.all(
-      students.map(
-        async (student) => ({
-          studentId:
-            student._id.toString(),
+  const rankings = await Promise.all(
+    students.map(async (student) => ({
+      studentId: student._id.toString(),
 
-          ...(await getStudentSummary(
-            student._id,
-            type,
-            week,
-            selectedBatch,
-            topic
-          )),
-        })
-      )
-    );
+      ...(await getStudentSummary(
+        student._id,
+        type,
+        week,
+        selectedBatch,
+        topic,
+      )),
+    })),
+  );
 
   rankings.sort((a, b) => {
-    if (
-      b.completed !==
-      a.completed
-    ) {
-      return (
-        b.completed -
-        a.completed
-      );
+    if (b.completed !== a.completed) {
+      return b.completed - a.completed;
     }
 
-    return (
-      b.completion -
-      a.completion
-    );
+    return b.completion - a.completion;
   });
 
-  const index =
-    rankings.findIndex(
-      (item) =>
-        item.studentId ===
-        studentId.toString()
-    );
+  const index = rankings.findIndex(
+    (item) => item.studentId === studentId.toString(),
+  );
 
   return {
-    rank:
-      index === -1
-        ? null
-        : index + 1,
+    rank: index === -1 ? null : index + 1,
 
-    totalStudents:
-      rankings.length,
+    totalStudents: rankings.length,
   };
 };
 
@@ -878,126 +645,71 @@ const getStudentRank = async (
 // STUDENT DASHBOARD
 // ======================================================
 
-const getProgressDashboard =
-  async (
+const getProgressDashboard = async (studentId, batchId) => {
+  const student = await User.findById(studentId).select(
+    "firstName lastName email gender batch",
+  );
+
+  if (!student) {
+    throw new Error("Student not found");
+  }
+
+  const selectedBatch = await getSelectedStudentBatch(studentId, batchId);
+
+  const cp = await getStudentSummary(studentId, "cp", null, selectedBatch);
+
+  const dev = await getStudentSummary(studentId, "dev", null, selectedBatch);
+
+  const overall = await getStudentSummary(
     studentId,
-    batchId
-  ) => {
-    const student =
-      await User.findById(
-        studentId
-      ).select(
-        "firstName lastName email gender batch"
-      );
+    "all",
+    null,
+    selectedBatch,
+  );
 
-    if (!student) {
-      throw new Error(
-        "Student not found"
-      );
-    }
+  const cpRank = await getStudentRank(studentId, "cp", null, selectedBatch);
 
-    const selectedBatch =
-      await getSelectedStudentBatch(
-        studentId,
-        batchId
-      );
+  const devRank = await getStudentRank(studentId, "dev", null, selectedBatch);
 
-    const cp =
-      await getStudentSummary(
-        studentId,
-        "cp",
-        null,
-        selectedBatch
-      );
+  return {
+    student: {
+      id: student._id,
+      name: `${student.firstName} ${student.lastName}`,
+      email: student.email,
+      gender: student.gender,
+    },
 
-    const dev =
-      await getStudentSummary(
-        studentId,
-        "dev",
-        null,
-        selectedBatch
-      );
+    batch: await Batch.findById(selectedBatch).select("name status"),
 
-    const overall =
-      await getStudentSummary(
-        studentId,
-        "all",
-        null,
-        selectedBatch
-      );
+    cp: {
+      ...cp,
+      ...cpRank,
+    },
 
-    const cpRank =
-      await getStudentRank(
-        studentId,
-        "cp",
-        null,
-        selectedBatch
-      );
+    dev: {
+      ...dev,
+      ...devRank,
+    },
 
-    const devRank =
-      await getStudentRank(
-        studentId,
-        "dev",
-        null,
-        selectedBatch
-      );
-
-    return {
-      student: {
-        id: student._id,
-        name: `${student.firstName} ${student.lastName}`,
-        email: student.email,
-        gender: student.gender,
-      },
-
-      batch:
-        await Batch.findById(
-          selectedBatch
-        ).select(
-          "name status"
-        ),
-
-      cp: {
-        ...cp,
-        ...cpRank,
-      },
-
-      dev: {
-        ...dev,
-        ...devRank,
-      },
-
-      overall,
-    };
+    overall,
   };
+};
 
 // ======================================================
 // MENTOR PROGRESS
 // ======================================================
 
-const getMentorProgress = async (
-  mentorId,
-  type,
-  week,
-  batchId,
-  topic
-) => {
-  const mentor =
-    await User.findOne({
-      _id: mentorId,
-      role: "mentor",
-    }).select(
-      "batch assignedStudents"
-    );
+const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
+  const mentor = await User.findOne({
+    _id: mentorId,
+    role: "mentor",
+  }).select("batch assignedStudents");
 
   if (!mentor) {
-    throw new Error(
-      "Mentor not found"
-    );
+    throw new Error("Mentor not found");
   }
 
-  const selectedBatch =
-    batchId || mentor.batch;
+  const selectedBatch = batchId || mentor.batch;
 
   if (!selectedBatch) {
     return [];
@@ -1005,311 +717,215 @@ const getMentorProgress = async (
 
   // IMPORTANT:
   // Only students assigned to this mentor
-  const students =
-    await User.find({
-      _id: {
-        $in:
-          mentor.assignedStudents ||
-          [],
-      },
+  const students = await User.find({
+    _id: {
+      $in: mentor.assignedStudents || [],
+    },
 
-      role: "student",
+    role: "student",
 
-      batch: selectedBatch,
-    }).select(
-      "firstName lastName email gender batch"
-    );
+    batch: selectedBatch,
+  }).select("firstName lastName email gender batch");
 
-  const result =
-    await Promise.all(
-      students.map(
-        async (student) => {
-          const cp =
-            await getStudentSummary(
-              student._id,
-              "cp",
-              week,
-              selectedBatch,
-              topic
-            );
+  const result = await Promise.all(
+    students.map(async (student) => {
+      const cp = await getStudentSummary(
+        student._id,
+        "cp",
+        week,
+        selectedBatch,
+        topic,
+      );
 
-          const dev =
-            await getStudentSummary(
-              student._id,
-              "dev",
-              week,
-              selectedBatch,
-              topic
-            );
+      const dev = await getStudentSummary(
+        student._id,
+        "dev",
+        week,
+        selectedBatch,
+        topic,
+      );
 
-          const overall =
-            await getStudentSummary(
-              student._id,
-              "all",
-              week,
-              selectedBatch,
-              topic
-            );
+      const overall = await getStudentSummary(
+        student._id,
+        "all",
+        week,
+        selectedBatch,
+        topic,
+      );
 
-          const items =
-            await getStudentProgress(
-              student._id,
-              "all",
-              week,
-              selectedBatch,
-              topic
-            );
+      const items = await getStudentProgress(
+        student._id,
+        "all",
+        week,
+        selectedBatch,
+        topic,
+      );
 
-          // ============================================
-          // AT RISK
-          // ============================================
+      // ============================================
+      // AT RISK
+      // ============================================
 
-          const atRisk =
-            overall.completion < 50 ||
-            cp.needsHelp > 0 ||
-            dev.needsHelp > 0;
+      const atRisk =
+        overall.completion < 50 || cp.needsHelp > 0 || dev.needsHelp > 0;
 
-          // ============================================
-          // COLLECT MENTOR NOTES
-          // ============================================
+      // ============================================
+      // COLLECT MENTOR NOTES
+      // ============================================
 
-          const notes =
-            items
-              .filter(
-                (item) =>
-                  item.progress
-                    ?.mentorNote
-              )
-              .map(
-                (item) => ({
-                  contentId:
-                    item.content?._id,
+      const notes = items
+        .filter((item) => item.progress?.mentorNote)
+        .map((item) => ({
+          contentId: item.content?._id,
 
-                  title:
-                    item.content?.title,
+          title: item.content?.title,
 
-                  type:
-                    item.content?.type,
+          type: item.content?.type,
 
-                  topic:
-                    item.content?.topic,
+          topic: item.content?.topic,
 
-                  week:
-                    item.content?.week,
+          week: item.content?.week,
 
-                  note:
-                    item.progress
-                      ?.mentorNote ||
-                    item.progress
-                      ?.note ||
-                    "",
+          note: item.progress?.mentorNote || item.progress?.note || "",
 
-                  status:
-                    normalizeStatus(
-                      item.progress
-                        ?.status
-                    ),
+          status: normalizeStatus(item.progress?.status),
 
-                  displayStatus:
-                    displayStatus(
-                      item.progress
-                        ?.status
-                    ),
+          displayStatus: displayStatus(item.progress?.status),
 
-                  updatedAt:
-                    item.progress
-                      ?.updatedAt ||
-                    null,
-                })
-              );
+          updatedAt: item.progress?.updatedAt || null,
+        }));
 
-          return {
-            student: {
-              id: student._id,
+      return {
+        student: {
+          id: student._id,
 
-              name: `${student.firstName} ${student.lastName}`,
+          name: `${student.firstName} ${student.lastName}`,
 
-              email: student.email,
+          email: student.email,
 
-              gender: student.gender,
+          gender: student.gender,
 
-              batch:
-                student.batch,
-            },
+          batch: student.batch,
+        },
 
-            cp,
+        cp,
 
-            dev,
+        dev,
 
-            overall,
+        overall,
 
-            items,
+        items,
 
-            notes,
+        notes,
 
-            atRisk,
+        atRisk,
 
-            riskReason:
-              overall.completion < 50
-                ? "Progress is below 50%"
-                : cp.needsHelp > 0 ||
-                  dev.needsHelp > 0
-                ? "Student needs help"
-                : null,
-          };
-        }
-      )
-    );
-
-  return result.sort(
-    (a, b) =>
-      b.overall.completion -
-      a.overall.completion
+        riskReason:
+          overall.completion < 50
+            ? "Progress is below 50%"
+            : cp.needsHelp > 0 || dev.needsHelp > 0
+              ? "Student needs help"
+              : null,
+      };
+    }),
   );
+
+  return result.sort((a, b) => b.overall.completion - a.overall.completion);
 };
 
 // ======================================================
 // FALLING BEHIND / AT RISK
 // ======================================================
 
-const getFallingBehindStudents =
-  async (
+const getFallingBehindStudents = async (
+  mentorId,
+  type,
+  week,
+  batchId,
+  topic,
+  threshold = 50,
+) => {
+  const students = await getMentorProgress(
     mentorId,
     type,
     week,
     batchId,
     topic,
-    threshold = 50
-  ) => {
-    const students =
-      await getMentorProgress(
-        mentorId,
-        type,
-        week,
-        batchId,
-        topic
-      );
+  );
 
-    const minimum =
-      Math.max(
-        0,
-        Math.min(
-          100,
-          Number(threshold) || 50
-        )
-      );
+  const minimum = Math.max(0, Math.min(100, Number(threshold) || 50));
 
-    return students.filter(
-      (student) =>
-        student.overall
-          .completion <
-          minimum ||
-        student.cp
-          .needsHelp > 0 ||
-        student.dev
-          .needsHelp > 0
-    );
-  };
+  return students.filter(
+    (student) =>
+      student.overall.completion < minimum ||
+      student.cp.needsHelp > 0 ||
+      student.dev.needsHelp > 0,
+  );
+};
 
 // ======================================================
 // ADMIN OVERALL PROGRESS
 // ======================================================
 
-const getOverallProgress =
-  async (
-    type,
-    week,
-    batchId,
-    topic
-  ) => {
-    if (!batchId) {
-      throw new Error(
-        "Batch ID is required"
-      );
-    }
+const getOverallProgress = async (type, week, batchId, topic) => {
+  if (!batchId) {
+    throw new Error("Batch ID is required");
+  }
 
-    const students =
-      await User.find({
-        role: "student",
-        batch: batchId,
-      }).select(
-        "firstName lastName email gender"
-      );
+  const students = await User.find({
+    role: "student",
+    batch: batchId,
+  }).select("firstName lastName email gender");
 
-    return Promise.all(
-      students.map(
-        async (student) => ({
-          student: {
-            id: student._id,
+  return Promise.all(
+    students.map(async (student) => ({
+      student: {
+        id: student._id,
 
-            name: `${student.firstName} ${student.lastName}`,
+        name: `${student.firstName} ${student.lastName}`,
 
-            email: student.email,
+        email: student.email,
 
-            gender: student.gender,
-          },
+        gender: student.gender,
+      },
 
-          cp:
-            await getStudentSummary(
-              student._id,
-              "cp",
-              week,
-              batchId,
-              topic
-            ),
+      cp: await getStudentSummary(student._id, "cp", week, batchId, topic),
 
-          dev:
-            await getStudentSummary(
-              student._id,
-              "dev",
-              week,
-              batchId,
-              topic
-            ),
+      dev: await getStudentSummary(student._id, "dev", week, batchId, topic),
 
-          overall:
-            await getStudentSummary(
-              student._id,
-              type || "all",
-              week,
-              batchId,
-              topic
-            ),
-        })
-      )
-    );
-  };
+      overall: await getStudentSummary(
+        student._id,
+        type || "all",
+        week,
+        batchId,
+        topic,
+      ),
+    })),
+  );
+};
 
 // ======================================================
 // UNPUBLISH
 // ======================================================
 
-const unpublishProgressContent =
-  async (contentId) => {
-    validateObjectId(
-      contentId,
-      "content ID"
-    );
+const unpublishProgressContent = async (contentId) => {
+  validateObjectId(contentId, "content ID");
 
-    const content =
-      await ProgressContent.findByIdAndUpdate(
-        contentId,
-        {
-          isPublished: false,
-        },
-        {
-          new: true,
-        }
-      );
+  const content = await ProgressContent.findByIdAndUpdate(
+    contentId,
+    {
+      isPublished: false,
+    },
+    {
+      new: true,
+    },
+  );
 
-    if (!content) {
-      throw new Error(
-        "Progress content not found"
-      );
-    }
+  if (!content) {
+    throw new Error("Progress content not found");
+  }
 
-    return content;
-  };
+  return content;
+};
 
 // ======================================================
 // EXPORT

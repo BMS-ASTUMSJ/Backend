@@ -2,10 +2,6 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// ============================================================
-// UPLOAD DIRECTORY
-// ============================================================
-
 const uploadDirectory = path.join(__dirname, "..", "uploads", "assignments");
 
 if (!fs.existsSync(uploadDirectory)) {
@@ -13,10 +9,6 @@ if (!fs.existsSync(uploadDirectory)) {
     recursive: true,
   });
 }
-
-// ============================================================
-// STORAGE
-// ============================================================
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -31,10 +23,6 @@ const storage = multer.diskStorage({
     cb(null, uniqueName);
   },
 });
-
-// ============================================================
-// ALLOWED FILE TYPES
-// ============================================================
 
 const allowedExtensions = [
   ".pdf",
@@ -62,10 +50,6 @@ const fileFilter = (req, file, cb) => {
 
   cb(null, true);
 };
-
-// ============================================================
-// MULTER CONFIG
-// ============================================================
 
 const uploadAssignmentFiles = multer({
   storage,

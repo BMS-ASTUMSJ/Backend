@@ -66,7 +66,6 @@ const submissionSchema = new mongoose.Schema(
   },
 );
 
-// One submission record per student per assignment
 submissionSchema.index(
   {
     assignment: 1,

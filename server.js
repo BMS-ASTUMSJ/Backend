@@ -1,9 +1,13 @@
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const path = require("path");
+
 const multer = require("multer");
 
 const connectDB = require("./config/db");
@@ -14,7 +18,6 @@ const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
-
 const batchRoutes = require("./routes/batchRoutes");
 const applicantRoutes = require("./routes/applicantRoutes");
 const teamRoutes = require("./routes/teamRoutes");
@@ -24,9 +27,6 @@ const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const assignmentRoutes = require("./routes/assignmentRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
-const sessionRoutes = require("./routes/sessionRoutes");
-const atRiskRoutes = require("./routes/atRiskRoutes");
-const profileRoutes = require("./routes/profileRoutes");
 
 // ============================================================
 // APP
@@ -35,24 +35,12 @@ const profileRoutes = require("./routes/profileRoutes");
 const app = express();
 
 // ============================================================
-// CORS CONFIGURATION
+// CORS
 // ============================================================
-
-const allowedOrigins = [
-  process.env.CLIENT_URL,
-  "http://localhost:5173",
-  "http://localhost:3000",
-].filter(Boolean);
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("Not allowed by CORS"));
-    },
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -64,8 +52,14 @@ app.use(
 // ============================================================
 
 app.use(express.json());
+
 app.use(cookieParser());
-app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  }),
+);
 
 // ============================================================
 // STATIC FILES
@@ -74,6 +68,8 @@ app.use(express.urlencoded({ extended: true }));
 // Assignment uploaded files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+app.use("/api/at-risk", require("./routes/atRiskRoutes"));
+
 // ============================================================
 // DATABASE
 // ============================================================
@@ -81,26 +77,33 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 connectDB();
 
 // ============================================================
-// API ROUTES
+// ROUTES
 // ============================================================
 
 app.use("/api/auth", authRoutes);
+
 app.use("/api/users", userRoutes);
-app.use("/api/profile", profileRoutes);
+
 app.use("/api/batches", batchRoutes);
+
 app.use("/api/applicants", applicantRoutes);
+
 app.use("/api/teams", teamRoutes);
+
 app.use("/api/announcements", announcementRoutes);
+
 app.use("/api/assignments", assignmentRoutes);
+
 app.use("/api/submissions", submissionRoutes);
+
 app.use("/api/attendance", attendanceRoutes);
-app.use("/api/sessions", sessionRoutes);
+
 app.use("/api/batch-history", batchHistoryRoutes);
+
 app.use("/api/progress", progressRoutes);
-app.use("/api/at-risk", atRiskRoutes);
 
 // ============================================================
-// ROOT & HEALTH CHECK
+// ROOT
 // ============================================================
 
 app.get("/", (req, res) => {
@@ -111,18 +114,19 @@ app.get("/", (req, res) => {
 });
 
 // ============================================================
-// 404 HANDLER
+// 404
 // ============================================================
 
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route not found - ${req.originalUrl}`,
+    message: "Route not found",
   });
 });
 
 // ============================================================
 // GLOBAL ERROR HANDLER
+// MUST COME AFTER ALL ROUTES
 // ============================================================
 
 app.use((err, req, res, next) => {
@@ -133,6 +137,7 @@ app.use((err, req, res, next) => {
   // ==========================================================
 
   if (err instanceof multer.MulterError) {
+    // File too large
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
         success: false,
@@ -140,6 +145,7 @@ app.use((err, req, res, next) => {
       });
     }
 
+    // Too many files
     if (err.code === "LIMIT_UNEXPECTED_FILE") {
       return res.status(400).json({
         success: false,
@@ -172,19 +178,14 @@ app.use((err, req, res, next) => {
   // GENERAL ERROR
   // ==========================================================
 
-  const statusCode = err.statusCode || 500;
-
-  return res.status(statusCode).json({
+  return res.status(500).json({
     success: false,
     message: err.message || "Internal server error.",
-    ...(process.env.NODE_ENV === "development" && {
-      stack: err.stack,
-    }),
   });
 });
 
 // ============================================================
-// SERVER INITIALIZATION
+// SERVER
 // ============================================================
 
 const PORT = process.env.PORT || 5000;
