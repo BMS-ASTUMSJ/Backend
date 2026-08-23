@@ -4,6 +4,7 @@ const ProgressContent = require("../models/progressContent");
 const StudentProgress = require("../models/studentProgress");
 const User = require("../models/user");
 const Batch = require("../models/batch");
+const Team = require("../models/team");
 
 // ======================================================
 // CONSTANTS
@@ -26,9 +27,7 @@ const STATUSES = ["not_started", "in_progress", "done", "needs_help"];
 // ======================================================
 
 const normalizeStatus = (status) => {
-  if (!status) {
-    return null;
-  }
+  if (!status) return null;
 
   const value = String(status).trim();
 
@@ -72,7 +71,7 @@ const displayStatus = (status) => {
 };
 
 // ======================================================
-// VALIDATE OBJECT ID
+// OBJECT ID
 // ======================================================
 
 const validateObjectId = (id, name) => {
@@ -84,7 +83,7 @@ const validateObjectId = (id, name) => {
 };
 
 // ======================================================
-// GET STUDENT BATCH IDS
+// STUDENT BATCH IDS
 // ======================================================
 
 const getStudentBatchIds = async (studentId) => {
@@ -110,7 +109,7 @@ const getStudentBatchIds = async (studentId) => {
 };
 
 // ======================================================
-// GET SELECTED STUDENT BATCH
+// SELECTED STUDENT BATCH
 // ======================================================
 
 const getSelectedStudentBatch = async (studentId, batchId) => {
@@ -130,13 +129,11 @@ const getSelectedStudentBatch = async (studentId, batchId) => {
 };
 
 // ======================================================
-// COMPLETION CHECK
+// COMPLETION
 // ======================================================
 
 const isCompleted = (progress) => {
-  if (!progress) {
-    return false;
-  }
+  if (!progress) return false;
 
   const status = normalizeStatus(progress.status);
 
@@ -204,7 +201,7 @@ const createProgressContent = async (data) => {
 };
 
 // ======================================================
-// GET PROGRESS CONTENT
+// GET CONTENT
 // ======================================================
 
 const getProgressContent = async (type, week, batchId, topic) => {
@@ -286,11 +283,11 @@ const getStudentProgress = async (studentId, type, week, batchId, topic) => {
     createdAt: 1,
   });
 
-  const contentIds = contents.map((item) => item._id);
-
-  if (contentIds.length === 0) {
+  if (!contents.length) {
     return [];
   }
+
+  const contentIds = contents.map((item) => item._id);
 
   const records = await StudentProgress.find({
     student: studentId,
@@ -302,9 +299,13 @@ const getStudentProgress = async (studentId, type, week, batchId, topic) => {
     .populate("updatedBy", "firstName lastName")
     .populate("content", "type topic week title link");
 
-  const recordMap = new Map(
-    records.map((record) => [record.content._id.toString(), record]),
-  );
+  const recordMap = new Map();
+
+  records.forEach((record) => {
+    if (record.content) {
+      recordMap.set(record.content._id.toString(), record);
+    }
+  });
 
   return contents.map((content) => {
     const existing = recordMap.get(content._id.toString());
@@ -346,7 +347,6 @@ const getStudentProgress = async (studentId, type, week, batchId, topic) => {
 
 const updateStudentProgress = async (studentId, contentId, data) => {
   validateObjectId(studentId, "student ID");
-
   validateObjectId(contentId, "content ID");
 
   const student = await User.findOne({
@@ -383,19 +383,11 @@ const updateStudentProgress = async (studentId, contentId, data) => {
     );
   }
 
-  // ====================================================
-  // FIND FIRST
-  // ====================================================
-
   let progress = await StudentProgress.findOne({
     student: student._id,
     batch: content.batch,
     content: content._id,
   });
-
-  // ====================================================
-  // CREATE
-  // ====================================================
 
   if (!progress) {
     progress = new StudentProgress({
@@ -413,33 +405,18 @@ const updateStudentProgress = async (studentId, contentId, data) => {
       completedAt: normalizedStatus === "done" ? new Date() : null,
     });
   } else {
-    // ==================================================
-    // UPDATE
-    // ==================================================
-
     progress.type = content.type;
-
     progress.topic = content.topic;
-
     progress.status = normalizedStatus;
-
     progress.updatedBy = student._id;
 
     progress.completedAt =
       normalizedStatus === "done" ? progress.completedAt || new Date() : null;
   }
 
-  // ====================================================
-  // SUBMISSION LINK
-  // ====================================================
-
   if (data?.submissionLink !== undefined) {
     progress.submissionLink = String(data.submissionLink).trim();
   }
-
-  // ====================================================
-  // ATTEMPTS
-  // ====================================================
 
   if (data?.attempts !== undefined) {
     const attempts = Number(data.attempts);
@@ -449,10 +426,6 @@ const updateStudentProgress = async (studentId, contentId, data) => {
     }
   }
 
-  // ====================================================
-  // TIME SPENT
-  // ====================================================
-
   if (data?.timeSpent !== undefined) {
     const timeSpent = Number(data.timeSpent);
 
@@ -461,37 +434,21 @@ const updateStudentProgress = async (studentId, contentId, data) => {
     }
   }
 
-  // ====================================================
-  // WATCHED
-  // ====================================================
-
   if (data?.watched !== undefined) {
     progress.watched = Boolean(data.watched);
   }
-
-  // ====================================================
-  // MENTOR NOTE
-  // ====================================================
 
   if (data?.mentorNote !== undefined) {
     progress.mentorNote = String(data.mentorNote).trim().slice(0, 1000);
   }
 
-  // Backwards compatibility
   if (data?.note !== undefined) {
     progress.mentorNote = String(data.note).trim().slice(0, 1000);
   }
 
-  // ====================================================
-  // SAVE
-  // ====================================================
-
   try {
     await progress.save();
   } catch (error) {
-    // If two requests attempted to create the same
-    // record at the same time, retrieve the existing one
-    // instead of crashing with 11000.
     if (error.code === 11000) {
       progress = await StudentProgress.findOne({
         student: student._id,
@@ -504,16 +461,10 @@ const updateStudentProgress = async (studentId, contentId, data) => {
       }
 
       progress.status = normalizedStatus;
-
       progress.updatedBy = student._id;
 
-      if (data?.mentorNote !== undefined) {
-        progress.mentorNote = String(data.mentorNote).trim().slice(0, 1000);
-      }
-
-      if (data?.note !== undefined) {
-        progress.mentorNote = String(data.note).trim().slice(0, 1000);
-      }
+      progress.completedAt =
+        normalizedStatus === "done" ? progress.completedAt || new Date() : null;
 
       await progress.save();
     } else {
@@ -521,21 +472,15 @@ const updateStudentProgress = async (studentId, contentId, data) => {
     }
   }
 
-  // ====================================================
-  // POPULATE
-  // ====================================================
-
   await progress.populate([
     {
       path: "student",
       select: "firstName lastName email gender",
     },
-
     {
       path: "content",
       select: "type topic week title link",
     },
-
     {
       path: "updatedBy",
       select: "firstName lastName",
@@ -553,10 +498,6 @@ const updateStudentProgress = async (studentId, contentId, data) => {
   return result;
 };
 
-// ======================================================
-// COMPATIBILITY ALIAS
-// ======================================================
-
 const updateStudentOwnProgress = updateStudentProgress;
 
 // ======================================================
@@ -572,17 +513,25 @@ const getStudentSummary = async (studentId, type, week, batchId, topic) => {
     topic,
   );
 
-  const completed = progressList.filter((item) =>
-    isCompleted(item.progress),
-  ).length;
+  let completed = 0;
+  let needsHelp = 0;
+  let inProgress = 0;
 
-  const needsHelp = progressList.filter(
-    (item) => normalizeStatus(item.progress?.status) === "needs_help",
-  ).length;
+  progressList.forEach((item) => {
+    const status = normalizeStatus(item.progress?.status);
 
-  const inProgress = progressList.filter(
-    (item) => normalizeStatus(item.progress?.status) === "in_progress",
-  ).length;
+    if (status === "done" || isCompleted(item.progress)) {
+      completed++;
+    }
+
+    if (status === "needs_help") {
+      needsHelp++;
+    }
+
+    if (status === "in_progress") {
+      inProgress++;
+    }
+  });
 
   const total = progressList.length;
 
@@ -591,7 +540,6 @@ const getStudentSummary = async (studentId, type, week, batchId, topic) => {
     completed,
     needsHelp,
     inProgress,
-
     completion: total ? Math.round((completed / total) * 100) : 0,
   };
 };
@@ -636,7 +584,6 @@ const getStudentRank = async (studentId, type, week, batchId, topic) => {
 
   return {
     rank: index === -1 ? null : index + 1,
-
     totalStudents: rankings.length,
   };
 };
@@ -695,145 +642,277 @@ const getProgressDashboard = async (studentId, batchId) => {
   };
 };
 
+const getStudentDashboard = getProgressDashboard;
+
+// ======================================================
+// GET MENTOR TEAMS
+// ======================================================
+
+const getMentorTeams = async (mentorId, batchId) => {
+  const filter = {
+    mentors: mentorId,
+  };
+
+  if (batchId) {
+    filter.batch = batchId;
+  }
+
+  return Team.find(filter).select("_id name gender batch mentors students");
+};
+
+// ======================================================
+// GET MENTOR STUDENTS
+// ======================================================
+
+const getMentorStudents = async (mentorId, batchId) => {
+  const teams = await getMentorTeams(mentorId, batchId);
+
+  const studentIds = [];
+
+  for (const team of teams) {
+    for (const studentId of team.students || []) {
+      const id = studentId.toString();
+
+      if (!studentIds.includes(id)) {
+        studentIds.push(id);
+      }
+    }
+  }
+
+  if (!studentIds.length) {
+    return [];
+  }
+
+  return User.find({
+    _id: {
+      $in: studentIds,
+    },
+    role: "student",
+    ...(batchId
+      ? {
+          batch: batchId,
+        }
+      : {}),
+  }).select("firstName lastName email gender batch");
+};
+
 // ======================================================
 // MENTOR PROGRESS
 // ======================================================
 
 const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
+  validateObjectId(mentorId, "mentor ID");
+
   const mentor = await User.findOne({
     _id: mentorId,
     role: "mentor",
-  }).select("batch assignedStudents");
+  }).select("batch");
 
   if (!mentor) {
     throw new Error("Mentor not found");
   }
 
-  const selectedBatch = batchId || mentor.batch;
+  let selectedBatch = batchId || mentor.batch;
+
+  /*
+   * If the mentor has no batch directly on the User
+   * document, get the batch from the mentor's team.
+   */
+  if (!selectedBatch) {
+    const team = await Team.findOne({
+      mentors: mentorId,
+    }).select("batch");
+
+    if (team?.batch) {
+      selectedBatch = team.batch;
+    }
+  }
 
   if (!selectedBatch) {
     return [];
   }
 
-  // IMPORTANT:
-  // Only students assigned to this mentor
-  const students = await User.find({
-    _id: {
-      $in: mentor.assignedStudents || [],
-    },
+  validateObjectId(selectedBatch, "batch ID");
 
-    role: "student",
+  /*
+   * IMPORTANT:
+   *
+   * We get students from Team.students,
+   * not only User.assignedStudents.
+   *
+   * This guarantees the mentor can only see
+   * students belonging to their own team.
+   */
+  const students = await getMentorStudents(mentorId, selectedBatch);
 
-    batch: selectedBatch,
-  }).select("firstName lastName email gender batch");
+  if (!students.length) {
+    return [];
+  }
 
-  const result = await Promise.all(
-    students.map(async (student) => {
-      const cp = await getStudentSummary(
-        student._id,
-        "cp",
-        week,
-        selectedBatch,
-        topic,
-      );
+  const result = [];
 
-      const dev = await getStudentSummary(
-        student._id,
-        "dev",
-        week,
-        selectedBatch,
-        topic,
-      );
+  for (const student of students) {
+    const cp = await getStudentSummary(
+      student._id,
+      "cp",
+      week,
+      selectedBatch,
+      topic,
+    );
 
-      const overall = await getStudentSummary(
-        student._id,
-        "all",
-        week,
-        selectedBatch,
-        topic,
-      );
+    const dev = await getStudentSummary(
+      student._id,
+      "dev",
+      week,
+      selectedBatch,
+      topic,
+    );
 
-      const items = await getStudentProgress(
-        student._id,
-        "all",
-        week,
-        selectedBatch,
-        topic,
-      );
+    const overall = await getStudentSummary(
+      student._id,
+      "all",
+      week,
+      selectedBatch,
+      topic,
+    );
 
-      // ============================================
-      // AT RISK
-      // ============================================
+    const items = await getStudentProgress(
+      student._id,
+      "all",
+      week,
+      selectedBatch,
+      topic,
+    );
 
-      const atRisk =
-        overall.completion < 50 || cp.needsHelp > 0 || dev.needsHelp > 0;
+    /*
+     * Collect actual progress statuses.
+     */
+    const statusCounts = {
+      completed: 0,
+      inProgress: 0,
+      needsHelp: 0,
+      notStarted: 0,
+    };
 
-      // ============================================
-      // COLLECT MENTOR NOTES
-      // ============================================
+    for (const item of items) {
+      const status = normalizeStatus(item.progress?.status);
 
-      const notes = items
-        .filter((item) => item.progress?.mentorNote)
-        .map((item) => ({
-          contentId: item.content?._id,
+      if (status === "done" || isCompleted(item.progress)) {
+        statusCounts.completed++;
+      } else if (status === "in_progress") {
+        statusCounts.inProgress++;
+      } else if (status === "needs_help") {
+        statusCounts.needsHelp++;
+      } else {
+        statusCounts.notStarted++;
+      }
+    }
 
-          title: item.content?.title,
+    /*
+     * Use the real StudentProgress values.
+     *
+     * This is especially important for:
+     *
+     * Completed
+     * In Progress
+     * Needs Help
+     */
+    const atRisk =
+      overall.completion < 50 || cp.needsHelp > 0 || dev.needsHelp > 0;
 
-          type: item.content?.type,
+    const notes = items
+      .filter((item) => item.progress?.mentorNote || item.progress?.note)
+      .map((item) => ({
+        contentId: item.content?._id,
 
-          topic: item.content?.topic,
+        title: item.content?.title,
 
-          week: item.content?.week,
+        type: item.content?.type,
 
-          note: item.progress?.mentorNote || item.progress?.note || "",
+        topic: item.content?.topic,
 
-          status: normalizeStatus(item.progress?.status),
+        week: item.content?.week,
 
-          displayStatus: displayStatus(item.progress?.status),
+        note: item.progress?.mentorNote || item.progress?.note || "",
 
-          updatedAt: item.progress?.updatedAt || null,
-        }));
+        status: normalizeStatus(item.progress?.status),
 
-      return {
-        student: {
-          id: student._id,
+        displayStatus: displayStatus(item.progress?.status),
 
-          name: `${student.firstName} ${student.lastName}`,
+        updatedAt: item.progress?.updatedAt || null,
+      }));
 
-          email: student.email,
+    result.push({
+      student: {
+        id: student._id,
+        name: `${student.firstName} ${student.lastName}`,
+        email: student.email,
+        gender: student.gender,
+        batch: student.batch,
+      },
 
-          gender: student.gender,
+      /*
+       * Existing dashboard fields.
+       */
+      cp,
+      dev,
+      overall,
 
-          batch: student.batch,
-        },
+      /*
+       * Detailed actual status counts.
+       */
+      completed: statusCounts.completed,
 
-        cp,
+      inProgress: statusCounts.inProgress,
 
-        dev,
+      needsHelp: statusCounts.needsHelp,
 
-        overall,
+      notStarted: statusCounts.notStarted,
 
-        items,
+      /*
+       * Also expose a progress object
+       * so the frontend can use:
+       *
+       * student.progress.completed
+       * student.progress.inProgress
+       * student.progress.needsHelp
+       */
+      progress: {
+        total: items.length,
 
-        notes,
+        completed: statusCounts.completed,
 
-        atRisk,
+        inProgress: statusCounts.inProgress,
 
-        riskReason:
-          overall.completion < 50
-            ? "Progress is below 50%"
-            : cp.needsHelp > 0 || dev.needsHelp > 0
-              ? "Student needs help"
-              : null,
-      };
-    }),
-  );
+        needsHelp: statusCounts.needsHelp,
+
+        notStarted: statusCounts.notStarted,
+
+        completion: items.length
+          ? Math.round((statusCounts.completed / items.length) * 100)
+          : 0,
+      },
+
+      items,
+
+      notes,
+
+      atRisk,
+
+      riskReason:
+        overall.completion < 50
+          ? "Progress is below 50%"
+          : cp.needsHelp > 0 || dev.needsHelp > 0
+            ? "Student needs help"
+            : null,
+    });
+  }
 
   return result.sort((a, b) => b.overall.completion - a.overall.completion);
 };
 
 // ======================================================
-// FALLING BEHIND / AT RISK
+// FALLING BEHIND
 // ======================================================
 
 const getFallingBehindStudents = async (
@@ -857,6 +936,7 @@ const getFallingBehindStudents = async (
   return students.filter(
     (student) =>
       student.overall.completion < minimum ||
+      student.needsHelp > 0 ||
       student.cp.needsHelp > 0 ||
       student.dev.needsHelp > 0,
   );
@@ -880,11 +960,8 @@ const getOverallProgress = async (type, week, batchId, topic) => {
     students.map(async (student) => ({
       student: {
         id: student._id,
-
         name: `${student.firstName} ${student.lastName}`,
-
         email: student.email,
-
         gender: student.gender,
       },
 
@@ -944,6 +1021,7 @@ module.exports = {
   getStudentRank,
 
   getProgressDashboard,
+  getStudentDashboard,
 
   getMentorProgress,
   getFallingBehindStudents,

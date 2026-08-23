@@ -5,6 +5,11 @@ const fs = require("fs");
 const Assignment = require("../models/Assignment");
 const Batch = require("../models/batch");
 const User = require("../models/user");
+const Team = require("../models/team");
+
+// ======================================================
+// DELETE LOCAL FILE
+// ======================================================
 
 const deleteLocalFile = (fileUrl) => {
   if (!fileUrl) return;
@@ -24,9 +29,13 @@ const deleteLocalFile = (fileUrl) => {
       fs.unlinkSync(filePath);
     }
   } catch (error) {
-    console.error("FILE DELETE ERROR:", error.message);
+    // File deletion failure should not break the request
   }
 };
+
+// ======================================================
+// DELETE UPLOADED FILES
+// ======================================================
 
 const deleteUploadedFiles = (files = []) => {
   if (!Array.isArray(files)) return;
@@ -36,11 +45,15 @@ const deleteUploadedFiles = (files = []) => {
       try {
         fs.unlinkSync(file.path);
       } catch (error) {
-        console.error("UPLOAD CLEANUP ERROR:", error.message);
+        // Ignore cleanup errors
       }
     }
   });
 };
+
+// ======================================================
+// FORMAT UPLOADED FILES
+// ======================================================
 
 const formatUploadedFiles = (files = []) => {
   if (!Array.isArray(files)) return [];
@@ -54,17 +67,144 @@ const formatUploadedFiles = (files = []) => {
   }));
 };
 
+// ======================================================
+// GET ACTIVE BATCH
+// ======================================================
+
 const getActiveBatch = async () => {
-  return await Batch.findOne({
+  return Batch.findOne({
     status: "active",
   });
 };
 
+// ======================================================
+// GET USER
+// ======================================================
+
 const getUserWithBatch = async (userId) => {
-  return await User.findById(userId)
-    .select("_id role batch batchHistory")
+  return User.findById(userId)
+    .select("_id role batch batchHistory firstName lastName email")
     .lean();
 };
+
+// ======================================================
+// GET USER ACCESSIBLE BATCH IDS
+//
+// STUDENT:
+//   User.batch + batchHistory
+//
+// MENTOR:
+//   Team.batch through Team.mentors
+//   + batchHistory
+//
+// ADMIN:
+//   handled separately
+// ======================================================
+
+const getUserAccessibleBatchIds = async (userId) => {
+  const user = await getUserWithBatch(userId);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  const batchIds = new Set();
+
+  // ----------------------------------------------------
+  // USER CURRENT BATCH
+  // ----------------------------------------------------
+
+  if (user.batch) {
+    batchIds.add(user.batch.toString());
+  }
+
+  // ----------------------------------------------------
+  // USER BATCH HISTORY
+  // ----------------------------------------------------
+
+  if (Array.isArray(user.batchHistory)) {
+    user.batchHistory.forEach((history) => {
+      if (history?.batch) {
+        const batchId = history.batch._id
+          ? history.batch._id.toString()
+          : history.batch.toString();
+
+        batchIds.add(batchId);
+      }
+    });
+  }
+
+  // ----------------------------------------------------
+  // MENTOR TEAM BATCHES
+  // ----------------------------------------------------
+
+  if (user.role === "mentor") {
+    const teams = await Team.find({
+      mentors: userId,
+    })
+      .select("batch")
+      .lean();
+
+    teams.forEach((team) => {
+      if (team.batch) {
+        batchIds.add(team.batch.toString());
+      }
+    });
+  }
+
+  return [...batchIds];
+};
+
+// ======================================================
+// GET CURRENT BATCH FOR USER
+//
+// STUDENT:
+//   user.batch
+//
+// MENTOR:
+//   first team batch
+//
+// If mentor.batch exists, it is preferred.
+// ======================================================
+
+const getUserCurrentBatchId = async (userId) => {
+  const user = await getUserWithBatch(userId);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  // ----------------------------------------------------
+  // USER BATCH
+  // ----------------------------------------------------
+
+  if (user.batch) {
+    return user.batch.toString();
+  }
+
+  // ----------------------------------------------------
+  // MENTOR TEAM BATCH
+  // ----------------------------------------------------
+
+  if (user.role === "mentor") {
+    const team = await Team.findOne({
+      mentors: userId,
+    })
+      .select("batch")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (team?.batch) {
+      return team.batch.toString();
+    }
+  }
+
+  return null;
+};
+
+// ======================================================
+// CREATE ASSIGNMENT
+// ======================================================
 
 const createAssignment = async (req, res) => {
   try {
@@ -76,6 +216,10 @@ const createAssignment = async (req, res) => {
       maxScore = 100,
       link = "",
     } = req.body;
+
+    // --------------------------------------------------
+    // VALIDATION
+    // --------------------------------------------------
 
     if (!title || !title.trim()) {
       deleteUploadedFiles(req.files);
@@ -122,6 +266,10 @@ const createAssignment = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // ACTIVE BATCH
+    // --------------------------------------------------
+
     const activeBatch = await getActiveBatch();
 
     if (!activeBatch) {
@@ -133,7 +281,15 @@ const createAssignment = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // FILES
+    // --------------------------------------------------
+
     const uploadedFiles = formatUploadedFiles(req.files || []);
+
+    // --------------------------------------------------
+    // CREATE
+    // --------------------------------------------------
 
     const assignment = await Assignment.create({
       title: title.trim(),
@@ -156,8 +312,6 @@ const createAssignment = async (req, res) => {
       assignment: populatedAssignment,
     });
   } catch (error) {
-    console.error("CREATE ASSIGNMENT ERROR:", error);
-
     deleteUploadedFiles(req.files);
 
     return res.status(500).json({
@@ -166,6 +320,10 @@ const createAssignment = async (req, res) => {
     });
   }
 };
+
+// ======================================================
+// GET ASSIGNMENTS
+// ======================================================
 
 const getAssignments = async (req, res) => {
   try {
@@ -187,10 +345,9 @@ const getAssignments = async (req, res) => {
 
     const role = String(user.role || "").toLowerCase();
 
-    console.log("GET ASSIGNMENTS");
-    console.log("User ID:", user._id.toString());
-    console.log("User role:", role);
-    console.log("User batch:", user.batch);
+    // --------------------------------------------------
+    // ADMIN
+    // --------------------------------------------------
 
     if (role === "admin") {
       const assignments = await Assignment.find({})
@@ -205,6 +362,10 @@ const getAssignments = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // STUDENT / MENTOR
+    // --------------------------------------------------
+
     if (role !== "student" && role !== "mentor") {
       return res.status(403).json({
         success: false,
@@ -212,7 +373,9 @@ const getAssignments = async (req, res) => {
       });
     }
 
-    if (!user.batch) {
+    const batchIds = await getUserAccessibleBatchIds(req.user._id);
+
+    if (batchIds.length === 0) {
       return res.status(200).json({
         success: true,
         count: 0,
@@ -221,11 +384,11 @@ const getAssignments = async (req, res) => {
       });
     }
 
-    const batchId = user.batch._id
-      ? user.batch._id.toString()
-      : user.batch.toString();
+    const validBatchIds = batchIds.filter((id) =>
+      mongoose.Types.ObjectId.isValid(id),
+    );
 
-    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+    if (validBatchIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Your assigned batch ID is invalid.",
@@ -233,14 +396,13 @@ const getAssignments = async (req, res) => {
     }
 
     const assignments = await Assignment.find({
-      batch: new mongoose.Types.ObjectId(batchId),
+      batch: {
+        $in: validBatchIds.map((id) => new mongoose.Types.ObjectId(id)),
+      },
     })
       .populate("batch", "name status startDate endDate")
       .sort({ createdAt: -1 })
       .lean();
-
-    console.log("Batch ID:", batchId);
-    console.log("Assignments found:", assignments.length);
 
     return res.status(200).json({
       success: true,
@@ -248,14 +410,16 @@ const getAssignments = async (req, res) => {
       assignments,
     });
   } catch (error) {
-    console.error("GET ASSIGNMENTS ERROR:", error);
-
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch assignments.",
     });
   }
 };
+
+// ======================================================
+// GET SINGLE ASSIGNMENT
+// ======================================================
 
 const getAssignment = async (req, res) => {
   try {
@@ -297,12 +461,20 @@ const getAssignment = async (req, res) => {
 
     const role = String(user.role || "").toLowerCase();
 
+    // --------------------------------------------------
+    // ADMIN
+    // --------------------------------------------------
+
     if (role === "admin") {
       return res.status(200).json({
         success: true,
         assignment,
       });
     }
+
+    // --------------------------------------------------
+    // STUDENT / MENTOR
+    // --------------------------------------------------
 
     if (role !== "student" && role !== "mentor") {
       return res.status(403).json({
@@ -311,32 +483,17 @@ const getAssignment = async (req, res) => {
       });
     }
 
-    const assignmentBatchId = assignment.batch?._id?.toString();
+    const accessibleBatchIds = await getUserAccessibleBatchIds(req.user._id);
 
-    const currentBatchId = user.batch
-      ? user.batch._id
-        ? user.batch._id.toString()
-        : user.batch.toString()
-      : null;
+    const assignmentBatchId = assignment.batch?._id
+      ? assignment.batch._id.toString()
+      : assignment.batch?.toString();
 
-    const belongsToCurrentBatch =
-      currentBatchId &&
-      assignmentBatchId &&
-      currentBatchId === assignmentBatchId;
-
-    const belongsToHistoricalBatch = (user.batchHistory || []).some(
-      (history) => {
-        if (!history.batch) return false;
-
-        const historyBatchId = history.batch._id
-          ? history.batch._id.toString()
-          : history.batch.toString();
-
-        return historyBatchId === assignmentBatchId;
-      },
+    const authorized = accessibleBatchIds.some(
+      (batchId) => batchId === assignmentBatchId,
     );
 
-    if (!belongsToCurrentBatch && !belongsToHistoricalBatch) {
+    if (!authorized) {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to view this assignment.",
@@ -348,14 +505,16 @@ const getAssignment = async (req, res) => {
       assignment,
     });
   } catch (error) {
-    console.error("GET SINGLE ASSIGNMENT ERROR:", error);
-
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch assignment.",
+      message: error.message || "Failed to fetch assignment.",
     });
   }
 };
+
+// ======================================================
+// GET ASSIGNMENT HISTORY
+// ======================================================
 
 const getAssignmentHistory = async (req, res) => {
   try {
@@ -377,6 +536,10 @@ const getAssignmentHistory = async (req, res) => {
 
     const role = String(user.role || "").toLowerCase();
 
+    // --------------------------------------------------
+    // ADMIN
+    // --------------------------------------------------
+
     if (role === "admin") {
       const assignments = await Assignment.find({})
         .populate("batch", "name status startDate endDate")
@@ -390,6 +553,10 @@ const getAssignmentHistory = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // STUDENT / MENTOR
+    // --------------------------------------------------
+
     if (role !== "student" && role !== "mentor") {
       return res.status(403).json({
         success: false,
@@ -397,33 +564,13 @@ const getAssignmentHistory = async (req, res) => {
       });
     }
 
-    const historicalBatchIds = (user.batchHistory || [])
-      .filter((history) => history.batch)
-      .map((history) => {
-        return history.batch._id ? history.batch._id : history.batch;
-      });
+    const accessibleBatchIds = await getUserAccessibleBatchIds(req.user._id);
 
-    const uniqueHistoricalBatchIds = [
-      ...new Set(historicalBatchIds.map((id) => id.toString())),
-    ];
+    const currentBatchId = await getUserCurrentBatchId(req.user._id);
 
-    if (uniqueHistoricalBatchIds.length === 0) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        assignments: [],
-      });
-    }
-
-    const currentBatchId = user.batch
-      ? user.batch._id
-        ? user.batch._id.toString()
-        : user.batch.toString()
-      : null;
-
-    const previousBatchIds = currentBatchId
-      ? uniqueHistoricalBatchIds.filter((id) => id !== currentBatchId)
-      : uniqueHistoricalBatchIds;
+    const previousBatchIds = accessibleBatchIds.filter(
+      (id) => id !== currentBatchId,
+    );
 
     if (previousBatchIds.length === 0) {
       return res.status(200).json({
@@ -448,14 +595,16 @@ const getAssignmentHistory = async (req, res) => {
       assignments,
     });
   } catch (error) {
-    console.error("GET ASSIGNMENT HISTORY ERROR:", error);
-
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch assignment history.",
+      message: error.message || "Failed to fetch assignment history.",
     });
   }
 };
+
+// ======================================================
+// UPDATE ASSIGNMENT
+// ======================================================
 
 const updateAssignment = async (req, res) => {
   try {
@@ -491,6 +640,10 @@ const updateAssignment = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // TITLE
+    // --------------------------------------------------
+
     if (title !== undefined) {
       if (!title.trim()) {
         deleteUploadedFiles(req.files);
@@ -503,6 +656,10 @@ const updateAssignment = async (req, res) => {
 
       assignment.title = title.trim();
     }
+
+    // --------------------------------------------------
+    // DESCRIPTION
+    // --------------------------------------------------
 
     if (description !== undefined) {
       if (!description.trim()) {
@@ -517,6 +674,10 @@ const updateAssignment = async (req, res) => {
       assignment.description = description.trim();
     }
 
+    // --------------------------------------------------
+    // INSTRUCTOR
+    // --------------------------------------------------
+
     if (instructorName !== undefined) {
       if (!instructorName.trim()) {
         deleteUploadedFiles(req.files);
@@ -530,9 +691,17 @@ const updateAssignment = async (req, res) => {
       assignment.instructorName = instructorName.trim();
     }
 
+    // --------------------------------------------------
+    // DEADLINE
+    // --------------------------------------------------
+
     if (deadline !== undefined && deadline) {
       assignment.deadline = deadline;
     }
+
+    // --------------------------------------------------
+    // MAX SCORE
+    // --------------------------------------------------
 
     if (maxScore !== undefined) {
       if (Number(maxScore) <= 0) {
@@ -547,18 +716,28 @@ const updateAssignment = async (req, res) => {
       assignment.maxScore = Number(maxScore);
     }
 
+    // --------------------------------------------------
+    // LINK
+    // --------------------------------------------------
+
     if (link !== undefined) {
       assignment.link = link ? link.trim() : "";
     }
+
+    // --------------------------------------------------
+    // FILES
+    // --------------------------------------------------
 
     const newFiles = formatUploadedFiles(req.files || []);
 
     const shouldReplaceFiles = replaceFiles === "true" || replaceFiles === true;
 
     if (shouldReplaceFiles) {
-      assignment.files.forEach((file) => {
-        deleteLocalFile(file.fileUrl);
-      });
+      if (Array.isArray(assignment.files)) {
+        assignment.files.forEach((file) => {
+          deleteLocalFile(file.fileUrl);
+        });
+      }
 
       assignment.files = newFiles;
     } else if (newFiles.length > 0) {
@@ -577,8 +756,6 @@ const updateAssignment = async (req, res) => {
       assignment: populatedAssignment,
     });
   } catch (error) {
-    console.error("UPDATE ASSIGNMENT ERROR:", error);
-
     deleteUploadedFiles(req.files);
 
     return res.status(500).json({
@@ -587,6 +764,10 @@ const updateAssignment = async (req, res) => {
     });
   }
 };
+
+// ======================================================
+// DELETE ASSIGNMENT
+// ======================================================
 
 const deleteAssignment = async (req, res) => {
   try {
@@ -608,9 +789,11 @@ const deleteAssignment = async (req, res) => {
       });
     }
 
-    assignment.files.forEach((file) => {
-      deleteLocalFile(file.fileUrl);
-    });
+    if (Array.isArray(assignment.files)) {
+      assignment.files.forEach((file) => {
+        deleteLocalFile(file.fileUrl);
+      });
+    }
 
     await Assignment.findByIdAndDelete(id);
 
@@ -619,14 +802,16 @@ const deleteAssignment = async (req, res) => {
       message: "Assignment deleted successfully.",
     });
   } catch (error) {
-    console.error("DELETE ASSIGNMENT ERROR:", error);
-
     return res.status(500).json({
       success: false,
       message: "Failed to delete assignment.",
     });
   }
 };
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = {
   createAssignment,
