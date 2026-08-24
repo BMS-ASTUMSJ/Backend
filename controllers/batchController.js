@@ -1,8 +1,37 @@
 const mongoose = require("mongoose");
+
 const Batch = require("../models/batch");
 const User = require("../models/user");
 const Team = require("../models/team");
 const Applicant = require("../models/applicant");
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const isValidObjectId = (id) => {
+  return id && mongoose.Types.ObjectId.isValid(id);
+};
+
+const uniqueIds = (ids = []) => {
+  const result = [];
+
+  for (const id of ids) {
+    if (!id) continue;
+
+    const value = id.toString();
+
+    if (!result.includes(value)) {
+      result.push(value);
+    }
+  }
+
+  return result;
+};
+
+// ============================================================
+// CREATE BATCH
+// ============================================================
 
 const createBatch = async (req, res) => {
   try {
@@ -40,6 +69,7 @@ const createBatch = async (req, res) => {
       });
     }
 
+    // Only one active batch
     if (status === "active") {
       await Batch.updateMany(
         { status: "active" },
@@ -75,6 +105,10 @@ const createBatch = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET ALL BATCHES
+// ============================================================
+
 const getBatches = async (req, res) => {
   try {
     const batches = await Batch.find().sort({
@@ -96,10 +130,22 @@ const getBatches = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET MY BATCHES
+//
+// IMPORTANT:
+// Mentors can get their batch from:
+// 1. user.batch
+// 2. user.batchHistory
+// 3. Team.mentors -> Team.batch
+//
+// This fixes the BatchHistory.jsx problem.
+// ============================================================
+
 const getMyBatches = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select(
-      "role batch batchHistory",
+      "role batch batchHistory firstName lastName email",
     );
 
     if (!user) {
@@ -109,48 +155,125 @@ const getMyBatches = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // ADMIN
+    // --------------------------------------------------------
+
     if (user.role === "admin") {
       const batches = await Batch.find().sort({
         createdAt: -1,
       });
 
+      const result = batches.map((batch) => ({
+        batch,
+        role: "admin",
+      }));
+
       return res.status(200).json({
         success: true,
-        batches: batches.map((batch) => ({
-          batch,
-          role: "admin",
-        })),
+
+        currentBatch: null,
+        currentRole: "admin",
+
+        batchHistory: result,
+
+        batches: result,
       });
     }
 
-    const history = user.batchHistory || [];
+    // --------------------------------------------------------
+    // COLLECT BATCH IDS
+    // --------------------------------------------------------
 
-    const batchIds = history.map((item) => item.batch).filter(Boolean);
+    const batchIds = [];
 
-    if (
-      user.batch &&
-      !batchIds.some((id) => id.toString() === user.batch.toString())
-    ) {
+    // Current user.batch
+    if (user.batch) {
       batchIds.push(user.batch);
     }
 
+    // Historical batches
+    for (const history of user.batchHistory || []) {
+      if (history?.batch) {
+        batchIds.push(history.batch);
+      }
+    }
+
+    // --------------------------------------------------------
+    // IMPORTANT MENTOR FIX
+    //
+    // If mentor.batch is null, find batches from teams
+    // where this mentor is assigned.
+    // --------------------------------------------------------
+
+    if (user.role === "mentor") {
+      const mentorTeams = await Team.find({
+        mentors: user._id,
+      }).select("batch");
+
+      for (const team of mentorTeams) {
+        if (team.batch) {
+          batchIds.push(team.batch);
+        }
+      }
+    }
+
+    const uniqueBatchIds = uniqueIds(batchIds);
+
+    // --------------------------------------------------------
+    // NO BATCH
+    // --------------------------------------------------------
+
+    if (!uniqueBatchIds.length) {
+      return res.status(200).json({
+        success: true,
+
+        currentBatch: null,
+        currentRole: user.role,
+
+        batchHistory: [],
+
+        batches: [],
+      });
+    }
+
+    // --------------------------------------------------------
+    // GET BATCH DOCUMENTS
+    // --------------------------------------------------------
+
     const batches = await Batch.find({
-      _id: { $in: batchIds },
+      _id: {
+        $in: uniqueBatchIds,
+      },
     }).sort({
+      startDate: -1,
       createdAt: -1,
     });
 
+    // --------------------------------------------------------
+    // BUILD RESULT
+    // --------------------------------------------------------
+
     const result = batches.map((batch) => {
-      const membership = history.find(
-        (item) => item.batch && item.batch.toString() === batch._id.toString(),
+      const batchId = batch._id.toString();
+
+      // Check batchHistory first
+      const historyItem = (user.batchHistory || []).find(
+        (item) => item?.batch && item.batch.toString() === batchId,
       );
 
-      let role = membership?.role || null;
+      let role = historyItem?.role || null;
 
+      // Current user batch
       if (!role && user.batch) {
-        if (user.batch.toString() === batch._id.toString()) {
-          role = user.role === "mentor" ? "mentor" : "student";
+        if (user.batch.toString() === batchId) {
+          role = user.role;
         }
+      }
+
+      // Mentor team membership
+      if (!role && user.role === "mentor") {
+        role = "mentor";
       }
 
       return {
@@ -159,8 +282,76 @@ const getMyBatches = async (req, res) => {
       };
     });
 
+    // --------------------------------------------------------
+    // DETERMINE CURRENT BATCH
+    //
+    // Priority:
+    // 1. user.batch
+    // 2. active batch assigned through mentor team
+    // 3. first active batch in result
+    // --------------------------------------------------------
+
+    let currentBatch = null;
+    let currentRole = user.role;
+
+    // 1. user.batch
+    if (user.batch) {
+      currentBatch =
+        result.find(
+          (item) => item.batch._id.toString() === user.batch.toString(),
+        ) || null;
+
+      if (currentBatch?.role) {
+        currentRole = currentBatch.role;
+      }
+    }
+
+    // 2. Mentor team active batch
+    if (!currentBatch && user.role === "mentor") {
+      const activeResult = result.find(
+        (item) => item.batch.status === "active",
+      );
+
+      if (activeResult) {
+        currentBatch = activeResult;
+        currentRole = "mentor";
+      }
+    }
+
+    // 3. First available
+    if (!currentBatch && result.length) {
+      currentBatch = result[0];
+
+      if (currentBatch.role) {
+        currentRole = currentBatch.role;
+      }
+    }
+
+    // --------------------------------------------------------
+    // HISTORY
+    // Exclude current batch from history
+    // --------------------------------------------------------
+
+    const batchHistory = result.filter((item) => {
+      if (!currentBatch) return true;
+
+      return item.batch._id.toString() !== currentBatch.batch._id.toString();
+    });
+
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
     return res.status(200).json({
       success: true,
+
+      currentBatch,
+
+      currentRole,
+
+      batchHistory,
+
+      // Keep this for existing frontend code
       batches: result,
     });
   } catch (error) {
@@ -174,11 +365,15 @@ const getMyBatches = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET MY BATCH
+// ============================================================
+
 const getMyBatch = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID.",
@@ -205,6 +400,10 @@ const getMyBatch = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // ADMIN
+    // --------------------------------------------------------
+
     if (user.role === "admin") {
       return res.status(200).json({
         success: true,
@@ -213,8 +412,12 @@ const getMyBatch = async (req, res) => {
       });
     }
 
-    const membership = user.batchHistory?.find(
-      (item) => item.batch && item.batch.toString() === id,
+    // --------------------------------------------------------
+    // BATCH HISTORY
+    // --------------------------------------------------------
+
+    const membership = (user.batchHistory || []).find(
+      (item) => item?.batch && item.batch.toString() === id.toString(),
     );
 
     if (membership) {
@@ -225,12 +428,38 @@ const getMyBatch = async (req, res) => {
       });
     }
 
-    if (user.batch && user.batch.toString() === id) {
+    // --------------------------------------------------------
+    // CURRENT USER BATCH
+    // --------------------------------------------------------
+
+    if (user.batch && user.batch.toString() === id.toString()) {
       return res.status(200).json({
         success: true,
         batch,
-        role: user.role === "mentor" ? "mentor" : "student",
+        role: user.role,
       });
+    }
+
+    // --------------------------------------------------------
+    // MENTOR TEAM ACCESS
+    //
+    // IMPORTANT FIX
+    // --------------------------------------------------------
+
+    if (user.role === "mentor") {
+      const team = await Team.findOne({
+        batch: id,
+        mentors: user._id,
+      }).select("_id name batch mentors");
+
+      if (team) {
+        return res.status(200).json({
+          success: true,
+          batch,
+          role: "mentor",
+          team,
+        });
+      }
     }
 
     return res.status(403).json({
@@ -247,6 +476,10 @@ const getMyBatch = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// ACTIVE REGISTRATION BATCH
+// ============================================================
 
 const getActiveRegistrationBatch = async (req, res) => {
   try {
@@ -271,11 +504,15 @@ const getActiveRegistrationBatch = async (req, res) => {
   }
 };
 
+// ============================================================
+// TOGGLE REGISTRATION
+// ============================================================
+
 const toggleBatchRegistration = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID.",
@@ -324,10 +561,13 @@ const toggleBatchRegistration = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
       message: `Registration for "${batch.name}" is now ${
         newRegistrationStatus ? "OPEN" : "CLOSED"
       }.`,
+
       batch,
+
       batches,
     });
   } catch (error) {
@@ -341,12 +581,16 @@ const toggleBatchRegistration = async (req, res) => {
   }
 };
 
+// ============================================================
+// UPDATE BATCH STATUS
+// ============================================================
+
 const updateBatchStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID.",
@@ -398,8 +642,11 @@ const updateBatchStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
       message: `Batch "${batch.name}" status updated to ${status}.`,
+
       batch,
+
       batches,
     });
   } catch (error) {
@@ -412,6 +659,10 @@ const updateBatchStatus = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// BATCH DASHBOARD STATS
+// ============================================================
 
 const getBatchDashboardStats = async (req, res) => {
   try {
@@ -455,6 +706,7 @@ const getBatchDashboardStats = async (req, res) => {
 
       currentBatchStats = {
         batch: activeBatch,
+
         studentCount: students.length,
 
         femaleStudents: students.filter(
@@ -465,41 +717,51 @@ const getBatchDashboardStats = async (req, res) => {
           .length,
 
         mentorCount: mentors.length,
+
         teamCount: teams.length,
+
         applicantCount: applicants.length,
       };
     }
 
     const batchHistory = await Promise.all(
       allBatches.map(async (batch) => {
-        const students = await User.find({
-          $or: [
-            {
-              role: "student",
-              batch: batch._id,
-            },
-            {
-              batchHistory: {
-                $elemMatch: {
-                  batch: batch._id,
-                  role: "student",
+        const [students, teams] = await Promise.all([
+          User.find({
+            $or: [
+              {
+                role: "student",
+                batch: batch._id,
+              },
+              {
+                batchHistory: {
+                  $elemMatch: {
+                    batch: batch._id,
+                    role: "student",
+                  },
                 },
               },
-            },
-          ],
-        });
+            ],
+          }),
 
-        const teams = await Team.find({
-          batch: batch._id,
-        });
+          Team.find({
+            batch: batch._id,
+          }),
+        ]);
 
         return {
           _id: batch._id,
+
           name: batch.name,
+
           status: batch.status,
+
           isRegistrationOpen: batch.isRegistrationOpen,
+
           startDate: batch.startDate,
+
           endDate: batch.endDate,
+
           description: batch.description,
 
           totalStudents: students.length,
@@ -544,8 +806,11 @@ const getBatchDashboardStats = async (req, res) => {
 
       overallStats: {
         totalBatches: allBatches.length,
+
         totalStudentsAllTime,
+
         totalMentors,
+
         totalApplicants,
       },
     });
@@ -560,24 +825,32 @@ const getBatchDashboardStats = async (req, res) => {
   }
 };
 
+// ============================================================
+// BATCH STATS
+// ============================================================
+
 const getBatchStats = async (req, res) => {
   try {
-    const totalBatches = await Batch.countDocuments();
+    const [totalBatches, upcomingBatches, activeBatches, completedBatches] =
+      await Promise.all([
+        Batch.countDocuments(),
 
-    const upcomingBatches = await Batch.countDocuments({
-      status: "upcoming",
-    });
+        Batch.countDocuments({
+          status: "upcoming",
+        }),
 
-    const activeBatches = await Batch.countDocuments({
-      status: "active",
-    });
+        Batch.countDocuments({
+          status: "active",
+        }),
 
-    const completedBatches = await Batch.countDocuments({
-      status: "completed",
-    });
+        Batch.countDocuments({
+          status: "completed",
+        }),
+      ]);
 
     return res.status(200).json({
       success: true,
+
       stats: {
         totalBatches,
         upcomingBatches,
@@ -596,11 +869,15 @@ const getBatchStats = async (req, res) => {
   }
 };
 
+// ============================================================
+// GET BATCH BY ID
+// ============================================================
+
 const getBatchById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID.",
@@ -616,55 +893,57 @@ const getBatchById = async (req, res) => {
       });
     }
 
-    const students = await User.find({
-      $or: [
-        {
-          role: "student",
-          batch: id,
-        },
-        {
-          batchHistory: {
-            $elemMatch: {
-              batch: id,
-              role: "student",
+    const [students, mentors, teams, applicants] = await Promise.all([
+      User.find({
+        $or: [
+          {
+            role: "student",
+            batch: id,
+          },
+          {
+            batchHistory: {
+              $elemMatch: {
+                batch: id,
+                role: "student",
+              },
             },
           },
-        },
-      ],
-    })
-      .select(
-        "firstName lastName email role gender phone schoolId bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
-      )
-      .populate("batch", "name startDate endDate status");
+        ],
+      })
+        .select(
+          "firstName lastName email role gender phone schoolId bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
+        )
+        .populate("batch", "name startDate endDate status"),
 
-    const mentors = await User.find({
-      $or: [
-        {
-          role: "mentor",
-          batch: id,
-        },
-        {
-          batchHistory: {
-            $elemMatch: {
-              batch: id,
-              role: "mentor",
+      User.find({
+        $or: [
+          {
+            role: "mentor",
+            batch: id,
+          },
+          {
+            batchHistory: {
+              $elemMatch: {
+                batch: id,
+                role: "mentor",
+              },
             },
           },
-        },
-      ],
-    })
-      .select(
-        "firstName lastName email role gender phone bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
-      )
-      .populate("batch", "name startDate endDate status");
+        ],
+      })
+        .select(
+          "firstName lastName email role gender phone bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
+        )
+        .populate("batch", "name startDate endDate status"),
 
-    const teams = await Team.find({
-      batch: id,
-    });
+      Team.find({
+        batch: id,
+      }),
 
-    const applicants = await Applicant.find({
-      batch: id,
-    });
+      Applicant.find({
+        batch: id,
+      }),
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -672,13 +951,19 @@ const getBatchById = async (req, res) => {
       batch,
 
       students,
+
       mentors,
+
       teams,
+
       applicants,
 
       studentCount: students.length,
+
       mentorCount: mentors.length,
+
       teamCount: teams.length,
+
       applicantCount: applicants.length,
     });
   } catch (error) {
@@ -692,12 +977,17 @@ const getBatchById = async (req, res) => {
   }
 };
 
+// ============================================================
+// UPDATE BATCH
+// ============================================================
+
 const updateBatch = async (req, res) => {
   try {
     const { name, startDate, endDate, status } = req.body;
+
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID.",
@@ -766,7 +1056,9 @@ const updateBatch = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
       message: "Batch updated successfully.",
+
       batch,
     });
   } catch (error) {
@@ -779,6 +1071,10 @@ const updateBatch = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// EXPORT
+// ============================================================
 
 module.exports = {
   createBatch,

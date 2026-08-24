@@ -1,48 +1,147 @@
 const mongoose = require("mongoose");
 const User = require("../models/user");
 const Batch = require("../models/batch");
+const Team = require("../models/team");
+
+// ============================================================
+// GET MY BATCH HISTORY - MENTOR
+// GET /api/batch-history/my
+// ============================================================
 
 const getMyBatchHistory = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id)
-      .select("-password")
-      .populate("batch", "name status startDate endDate description")
-      .populate(
-        "batchHistory.batch",
-        "name status startDate endDate description",
-      );
+    const userId = req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required.",
+      });
+    }
+
+    const user = await User.findById(userId).select(
+      "role batch batchHistory firstName lastName email",
+    );
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: "User not found.",
       });
     }
 
-    const history = (user.batchHistory || [])
-      .filter((item) => item.batch)
-      .map((item) => ({
-        batchId: item.batch._id,
-        batch: item.batch,
-        role: item.role,
-        joinedAt: item.joinedAt,
-      }));
+    if (user.role !== "mentor") {
+      return res.status(403).json({
+        success: false,
+        message: "Mentor access required.",
+      });
+    }
+
+    // ============================================================
+    // CURRENT BATCH
+    // ============================================================
+
+    let currentBatch = null;
+    let currentRole = "mentor";
+
+    if (user.batch) {
+      currentBatch = await Batch.findById(user.batch).lean();
+
+      if (currentBatch) {
+        currentRole = "mentor";
+      }
+    }
+
+    // ============================================================
+    // BATCH HISTORY
+    // ============================================================
+
+    const history = Array.isArray(user.batchHistory) ? user.batchHistory : [];
+
+    const historyBatchIds = history
+      .map((item) => item?.batch)
+      .filter(Boolean)
+      .filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+    // Include current batch in lookup if it isn't already
+    if (
+      user.batch &&
+      mongoose.Types.ObjectId.isValid(user.batch) &&
+      !historyBatchIds.some((id) => id.toString() === user.batch.toString())
+    ) {
+      historyBatchIds.push(user.batch);
+    }
+
+    let batches = [];
+
+    if (historyBatchIds.length > 0) {
+      batches = await Batch.find({
+        _id: {
+          $in: historyBatchIds,
+        },
+      })
+        .sort({
+          startDate: -1,
+          createdAt: -1,
+        })
+        .lean();
+    }
+
+    // ============================================================
+    // BUILD HISTORY RESPONSE
+    // ============================================================
+
+    const batchHistory = batches.map((batch) => {
+      const historyItem = history.find(
+        (item) => item?.batch && item.batch.toString() === batch._id.toString(),
+      );
+
+      return {
+        batchId: batch._id,
+        batch,
+        role: historyItem?.role || "mentor",
+        joinedAt: historyItem?.joinedAt || null,
+        leftAt: historyItem?.leftAt || null,
+      };
+    });
+
+    // ============================================================
+    // REMOVE CURRENT BATCH FROM HISTORY
+    // ============================================================
+
+    const previousBatches = batchHistory.filter((item) => {
+      if (!currentBatch?._id) {
+        return true;
+      }
+
+      return item.batchId.toString() !== currentBatch._id.toString();
+    });
+
+    // ============================================================
+    // RESPONSE
+    // ============================================================
 
     return res.status(200).json({
       success: true,
-      currentBatch: user.batch || null,
-      currentRole: user.role,
-      batchHistory: history,
+      currentBatch,
+      currentRole,
+      batchHistory: previousBatches,
     });
   } catch (error) {
     console.error("Get my batch history error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Error fetching batch history",
+      message: "Server error while fetching your batch history.",
+      error: error.message,
     });
   }
 };
+
+// ============================================================
+// GET ONE BATCH
+// GET /api/batch-history/my/:batchId
+// ============================================================
 
 const getMyBatch = async (req, res) => {
   try {
@@ -51,110 +150,129 @@ const getMyBatch = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(batchId)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid batch ID",
+        message: "Invalid batch ID.",
       });
     }
 
-    const user = await User.findById(req.user._id)
-      .select("-password")
-      .populate(
-        "batchHistory.batch",
-        "name status startDate endDate description",
-      );
+    const user = await User.findById(req.user._id).select(
+      "role batch batchHistory",
+    );
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: "User not found.",
       });
     }
 
-    const historyItem = (user.batchHistory || []).find(
-      (item) => item.batch && item.batch._id.toString() === batchId.toString(),
-    );
-
-    if (!historyItem) {
+    if (user.role !== "mentor") {
       return res.status(403).json({
         success: false,
-        message: "You do not have access to this batch",
+        message: "Mentor access required.",
       });
     }
 
-    const batch = await Batch.findById(batchId);
+    const batch = await Batch.findById(batchId).lean();
 
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: "Batch not found",
+        message: "Batch not found.",
       });
     }
 
+    // ============================================================
+    // CHECK CURRENT BATCH
+    // ============================================================
+
+    const isCurrentBatch = user.batch && user.batch.toString() === batchId;
+
+    // ============================================================
+    // CHECK HISTORY
+    // ============================================================
+
+    const historyItem = Array.isArray(user.batchHistory)
+      ? user.batchHistory.find(
+          (item) => item?.batch && item.batch.toString() === batchId,
+        )
+      : null;
+
+    if (!isCurrentBatch && !historyItem) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this batch.",
+      });
+    }
+
+    // ============================================================
+    // GET TEAM INFORMATION
+    // ============================================================
+
+    const teams = await Team.find({
+      batch: batchId,
+      mentors: req.user._id,
+    })
+      .populate("mentors", "firstName lastName email profileImage")
+      .populate("members", "firstName lastName email gender profileImage")
+      .lean();
+
+    // ============================================================
+    // RESPONSE
+    // ============================================================
+
     return res.status(200).json({
       success: true,
-
-      batch: {
-        _id: batch._id,
-        name: batch.name,
-        status: batch.status,
-        startDate: batch.startDate,
-        endDate: batch.endDate,
-        description: batch.description,
-      },
-
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        gender: user.gender,
-        phone: user.phone,
-        schoolId: user.schoolId,
-        githubUrl: user.githubUrl,
-        leetcodeUrl: user.leetcodeUrl,
-        codeforcesUrl: user.codeforcesUrl,
-        bio: user.bio,
-        profileImage: user.profileImage,
-      },
-
-      roleInBatch: historyItem.role,
-      joinedAt: historyItem.joinedAt,
-
-      attendance: [],
-      progress: [],
-      teams: [],
-      assignments: [],
+      batch,
+      role: historyItem?.role || "mentor",
+      joinedAt: historyItem?.joinedAt || null,
+      leftAt: historyItem?.leftAt || null,
+      isCurrentBatch,
+      teams,
     });
   } catch (error) {
     console.error("Get my batch error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Error fetching batch information",
+      message: "Server error while fetching batch.",
+      error: error.message,
     });
   }
 };
 
+// ============================================================
+// GET ALL BATCHES - ADMIN
+// GET /api/batch-history/admin/batches
+// ============================================================
+
 const getAllBatchesForAdmin = async (req, res) => {
   try {
-    const batches = await Batch.find({})
-      .select("name status startDate endDate description")
-      .sort({ startDate: -1 })
+    const batches = await Batch.find()
+      .sort({
+        startDate: -1,
+        createdAt: -1,
+      })
       .lean();
 
     return res.status(200).json({
       success: true,
-      count: batches.length,
       batches,
     });
   } catch (error) {
-    console.error("Get all batches error:", error);
+    console.error("Get all batches for admin error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Error fetching batches",
+      message: "Server error while fetching batches.",
+      error: error.message,
     });
   }
 };
+
+// ============================================================
+// GET BATCH MEMBERS - ADMIN
+// GET /api/batch-history/admin/batches/:batchId/members
+// ============================================================
 
 const getBatchMembersForAdmin = async (req, res) => {
   try {
@@ -163,69 +281,92 @@ const getBatchMembersForAdmin = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(batchId)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid batch ID",
+        message: "Invalid batch ID.",
       });
     }
 
-    const batch = await Batch.findById(batchId)
-      .select("name status startDate endDate description")
-      .lean();
+    const batch = await Batch.findById(batchId).lean();
 
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: "Batch not found",
+        message: "Batch not found.",
       });
     }
 
-    const users = await User.find({
-      "batchHistory.batch": batchId,
+    const students = await User.find({
+      $or: [
+        {
+          role: "student",
+          batch: batchId,
+        },
+        {
+          batchHistory: {
+            $elemMatch: {
+              batch: batchId,
+              role: "student",
+            },
+          },
+        },
+      ],
     })
       .select(
-        "firstName lastName email role phone schoolId profileImage batch batchHistory",
+        "firstName lastName email role gender phone profileImage batch batchHistory",
       )
       .lean();
 
-    const members = [];
+    const mentors = await User.find({
+      $or: [
+        {
+          role: "mentor",
+          batch: batchId,
+        },
+        {
+          batchHistory: {
+            $elemMatch: {
+              batch: batchId,
+              role: "mentor",
+            },
+          },
+        },
+      ],
+    })
+      .select(
+        "firstName lastName email role gender phone profileImage batch batchHistory",
+      )
+      .lean();
 
-    users.forEach((user) => {
-      const historyItems = (user.batchHistory || []).filter(
-        (item) => item.batch && item.batch.toString() === batchId.toString(),
-      );
-
-      historyItems.forEach((historyItem) => {
-        members.push({
-          userId: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          currentRole: user.role,
-          roleInBatch: historyItem.role,
-          phone: user.phone,
-          schoolId: user.schoolId,
-          profileImage: user.profileImage,
-          joinedAt: historyItem.joinedAt,
-          isCurrentBatch:
-            user.batch && user.batch.toString() === batchId.toString(),
-        });
-      });
-    });
+    const teams = await Team.find({
+      batch: batchId,
+    })
+      .populate("mentors", "firstName lastName email profileImage")
+      .populate("members", "firstName lastName email gender profileImage")
+      .lean();
 
     return res.status(200).json({
       success: true,
       batch,
-      count: members.length,
-      members,
+      students,
+      mentors,
+      teams,
+      studentCount: students.length,
+      mentorCount: mentors.length,
+      teamCount: teams.length,
     });
   } catch (error) {
-    console.error("Get batch members error:", error);
+    console.error("Get batch members for admin error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Error fetching batch members",
+      message: "Server error while fetching batch members.",
+      error: error.message,
     });
   }
 };
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   getMyBatchHistory,
