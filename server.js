@@ -28,8 +28,11 @@ const sessionRoutes = require("./routes/sessionRoutes");
 const batchHistoryRoutes = require("./routes/batchHistoryRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const assignmentRoutes = require("./routes/assignmentRoutes");
+const projectTrackingRoutes = require("./routes/projectTrackingRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
 const atRiskRoutes = require("./routes/atRiskRoutes");
+
+const mentorAssignmentSubmissionRoutes = require("./routes/mentorAssignmentSubmissionRoutes");
 
 // ============================================================
 // APP
@@ -102,6 +105,8 @@ app.use("/api/announcements", announcementRoutes);
 
 app.use("/api/assignments", assignmentRoutes);
 
+app.use("/api/project-tracking", projectTrackingRoutes);
+
 app.use("/api/submissions", submissionRoutes);
 
 app.use("/api/attendance", attendanceRoutes);
@@ -120,6 +125,8 @@ app.use("/api/sessions", sessionRoutes);
 app.use("/api/batch-history", batchHistoryRoutes);
 
 app.use("/api/progress", progressRoutes);
+
+app.use("/api/mentor-assignment-submissions", mentorAssignmentSubmissionRoutes);
 
 // ============================================================
 // ROOT
