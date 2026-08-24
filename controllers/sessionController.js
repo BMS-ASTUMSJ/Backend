@@ -1,14 +1,25 @@
 const mongoose = require("mongoose");
-
 const Session = require("../models/session");
 const Batch = require("../models/batch");
 const Team = require("../models/team");
 
-const VALID_TYPES = ["Lecture", "Experience Sharing", "Contest"];
+const VALID_TYPES = [
+  "Lecture",
+  "Experience Sharing",
+  "Contest",
+  "Daily Standup",
+  "Sunday Meeting",
+];
+
+const getStartOfDay = (d) => {
+  const date = new Date(d);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
 
 const createSession = async (req, res) => {
   try {
-    const { batchId, week, type, date, name, order } = req.body;
+    const { batchId, week, type, date, name, order, teamId } = req.body;
     const adminId = req.user?._id;
 
     if (!adminId) {
@@ -35,13 +46,11 @@ const createSession = async (req, res) => {
     if (!VALID_TYPES.includes(type)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid session type. Must be Lecture, Experience Sharing or Contest",
+        message: "Invalid session type",
       });
     }
 
     const weekNumber = Number(week);
-
     if (!Number.isInteger(weekNumber) || weekNumber < 1) {
       return res.status(400).json({
         success: false,
@@ -50,7 +59,6 @@ const createSession = async (req, res) => {
     }
 
     const batch = await Batch.findById(batchId);
-
     if (!batch) {
       return res.status(404).json({
         success: false,
@@ -59,11 +67,18 @@ const createSession = async (req, res) => {
     }
 
     const sessionDate = new Date(date);
-
     if (Number.isNaN(sessionDate.getTime())) {
       return res.status(400).json({
         success: false,
         message: "Invalid session date",
+      });
+    }
+
+    const today = getStartOfDay(new Date());
+    if (getStartOfDay(sessionDate) < today) {
+      return res.status(400).json({
+        success: false,
+        message: "Session date cannot be in the past. Must be today or a future date.",
       });
     }
 
@@ -78,7 +93,6 @@ const createSession = async (req, res) => {
           type: "Lecture",
           isActive: true,
         });
-
         sessionOrder = existingLectures + 1;
         sessionName = `Lecture ${sessionOrder}`;
       }
@@ -89,6 +103,7 @@ const createSession = async (req, res) => {
 
     const session = await Session.create({
       batch: batchId,
+      team: teamId && mongoose.Types.ObjectId.isValid(teamId) ? teamId : null,
       week: weekNumber,
       type,
       name: sessionName,
@@ -110,8 +125,6 @@ const createSession = async (req, res) => {
       });
     }
 
-    console.error("createSession error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error while creating session",
@@ -122,7 +135,7 @@ const createSession = async (req, res) => {
 
 const generateWeekSessions = async (req, res) => {
   try {
-    const { batchId, week, lectureCount, dates } = req.body;
+    const { batchId, week, lectureCount, weekStartDate, dates } = req.body;
     const adminId = req.user?._id;
 
     if (!adminId) {
@@ -132,10 +145,10 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    if (!batchId || !week || !lectureCount) {
+    if (!batchId || !week) {
       return res.status(400).json({
         success: false,
-        message: "batchId, week and lectureCount are required",
+        message: "batchId and week are required",
       });
     }
 
@@ -147,7 +160,7 @@ const generateWeekSessions = async (req, res) => {
     }
 
     const weekNumber = Number(week);
-    const lectures = Number(lectureCount);
+    const lectures = Math.min(Math.max(Number(lectureCount) || 2, 1), 5);
 
     if (!Number.isInteger(weekNumber) || weekNumber < 1) {
       return res.status(400).json({
@@ -156,15 +169,7 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    if (!Number.isInteger(lectures) || lectures < 1 || lectures > 10) {
-      return res.status(400).json({
-        success: false,
-        message: "lectureCount must be a positive integer (max 10)",
-      });
-    }
-
     const batch = await Batch.findById(batchId);
-
     if (!batch) {
       return res.status(404).json({
         success: false,
@@ -172,34 +177,90 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    const providedDates = dates || {};
-    const fallbackDate = providedDates.default
-      ? new Date(providedDates.default)
+    const baseDate = weekStartDate
+      ? new Date(weekStartDate)
+      : dates?.default
+      ? new Date(dates.default)
       : new Date();
 
-    if (Number.isNaN(fallbackDate.getTime())) {
+    if (Number.isNaN(baseDate.getTime())) {
       return res.status(400).json({
         success: false,
-        message: "Invalid default date",
+        message: "Invalid start date",
       });
     }
 
-    const resolveDate = (value) => {
-      const parsed = value ? new Date(value) : fallbackDate;
-      return Number.isNaN(parsed.getTime()) ? fallbackDate : parsed;
+    const today = getStartOfDay(new Date());
+    if (getStartOfDay(baseDate) < today) {
+      return res.status(400).json({
+        success: false,
+        message: "Week start date cannot be in the past. Must be today or a future date.",
+      });
+    }
+
+    const addDays = (d, days) => {
+      const result = new Date(d);
+      result.setDate(result.getDate() + days);
+      return result;
     };
 
+    const providedDates = dates || {};
     const sessionsToCreate = [];
+    const lectureDayOffsets = [0, 1, 2, 3, 4];
 
     for (let i = 1; i <= lectures; i++) {
+      const specificDate = providedDates[`lecture${i}`];
+      const assignedDate = specificDate
+        ? new Date(specificDate)
+        : addDays(baseDate, lectureDayOffsets[i - 1] || i - 1);
+
+      if (getStartOfDay(assignedDate) < today) {
+        return res.status(400).json({
+          success: false,
+          message: `Lecture ${i} date cannot be in the past.`,
+        });
+      }
+
       sessionsToCreate.push({
         batch: batchId,
         week: weekNumber,
         type: "Lecture",
         name: `Lecture ${i}`,
         order: i,
-        date: resolveDate(providedDates[`lecture${i}`]),
+        date: assignedDate,
         createdBy: adminId,
+      });
+    }
+
+    const expDate = providedDates.experienceSharing
+      ? new Date(providedDates.experienceSharing)
+      : addDays(baseDate, 3);
+
+    if (getStartOfDay(expDate) < today) {
+      return res.status(400).json({
+        success: false,
+        message: "Experience Sharing date cannot be in the past.",
+      });
+    }
+
+    sessionsToCreate.push({
+      batch: batchId,
+      week: weekNumber,
+      type: "Experience Sharing",
+      name: "Experience Sharing",
+      order: 1,
+      date: expDate,
+      createdBy: adminId,
+    });
+
+    const contestDate = providedDates.contest
+      ? new Date(providedDates.contest)
+      : addDays(baseDate, 5);
+
+    if (getStartOfDay(contestDate) < today) {
+      return res.status(400).json({
+        success: false,
+        message: "Contest date cannot be in the past.",
       });
     }
 
@@ -209,17 +270,7 @@ const generateWeekSessions = async (req, res) => {
       type: "Contest",
       name: "Contest",
       order: 1,
-      date: resolveDate(providedDates.contest),
-      createdBy: adminId,
-    });
-
-    sessionsToCreate.push({
-      batch: batchId,
-      week: weekNumber,
-      type: "Experience Sharing",
-      name: "Experience Sharing",
-      order: 1,
-      date: resolveDate(providedDates.experienceSharing),
+      date: contestDate,
       createdBy: adminId,
     });
 
@@ -229,12 +280,10 @@ const generateWeekSessions = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: `Week ${weekNumber} sessions generated (${lectures} lecture(s) + Contest + Experience Sharing)`,
+      message: `Week ${weekNumber} sessions generated successfully across future days.`,
       sessions: created,
     });
   } catch (error) {
-    console.error("generateWeekSessions error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error while generating week sessions",
@@ -266,7 +315,7 @@ const listSessionsForBatch = async (req, res) => {
 
     const sessions = await Session.find(query).sort({
       week: 1,
-      type: 1,
+      date: 1,
       order: 1,
     });
 
@@ -275,8 +324,6 @@ const listSessionsForBatch = async (req, res) => {
       sessions,
     });
   } catch (error) {
-    console.error("listSessionsForBatch error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error while listing sessions",
@@ -310,7 +357,7 @@ const listSessionsForMentor = async (req, res) => {
 
     const sessions = await Session.find(query).sort({
       week: 1,
-      type: 1,
+      date: 1,
       order: 1,
     });
 
@@ -320,8 +367,6 @@ const listSessionsForMentor = async (req, res) => {
       batchId: team.batch,
     });
   } catch (error) {
-    console.error("listSessionsForMentor error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error while listing sessions",
@@ -344,7 +389,7 @@ const deleteSession = async (req, res) => {
     const session = await Session.findByIdAndUpdate(
       sessionId,
       { isActive: false },
-      { new: true },
+      { new: true }
     );
 
     if (!session) {
@@ -359,8 +404,6 @@ const deleteSession = async (req, res) => {
       message: "Session removed",
     });
   } catch (error) {
-    console.error("deleteSession error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error while deleting session",

@@ -10,8 +10,13 @@ try {
   const emailService = require("../services/emailService");
   sendEmail = emailService.sendEmail || emailService;
 } catch (e) {
+  console.warn("Email service could not be loaded:", e.message);
   sendEmail = null;
 }
+
+/* ================================
+   REGISTER APPLICANT
+================================ */
 
 const registerApplicant = async (req, res) => {
   try {
@@ -32,6 +37,7 @@ const registerApplicant = async (req, res) => {
       batchId,
     } = req.body;
 
+    // Validate required fields
     if (
       !fullName ||
       !email ||
@@ -53,6 +59,7 @@ const registerApplicant = async (req, res) => {
       });
     }
 
+    // Check agreement
     if (!agreedToRules) {
       return res.status(400).json({
         success: false,
@@ -62,9 +69,11 @@ const registerApplicant = async (req, res) => {
 
     let targetBatch;
 
+    // Find selected batch
     if (batchId) {
       targetBatch = await Batch.findById(batchId);
     } else {
+      // Find an open registration batch
       targetBatch = await Batch.findOne({
         isRegistrationOpen: true,
       });
@@ -87,6 +96,7 @@ const registerApplicant = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
+    // Check existing applicant
     const existingApplicant = await Applicant.findOne({
       email: normalizedEmail,
     });
@@ -98,6 +108,7 @@ const registerApplicant = async (req, res) => {
       });
     }
 
+    // Create applicant
     const applicant = await Applicant.create({
       fullName: fullName.trim(),
       email: normalizedEmail,
@@ -113,6 +124,7 @@ const registerApplicant = async (req, res) => {
       about: about.trim(),
       agreedToRules,
       batch: targetBatch._id,
+      status: "pending",
     });
 
     return res.status(201).json({
@@ -130,6 +142,10 @@ const registerApplicant = async (req, res) => {
     });
   }
 };
+
+/* ================================
+   GET APPLICANTS
+================================ */
 
 const getApplicants = async (req, res) => {
   try {
@@ -169,11 +185,16 @@ const getApplicants = async (req, res) => {
   }
 };
 
+/* ================================
+   UPDATE APPLICANT STATUS
+================================ */
+
 const updateApplicantStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
+    // Validate status
     if (!["passed", "rejected"].includes(status)) {
       return res.status(400).json({
         success: false,
@@ -181,6 +202,7 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
+    // Find applicant
     const applicant = await Applicant.findById(id);
 
     if (!applicant) {
@@ -190,34 +212,71 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    if (status === "rejected") {
-      applicant.status = "rejected";
+    /* ================================
+       REJECT APPLICANT
+    ================================ */
 
-      await applicant.save();
+    if (status === "rejected") {
+      // IMPORTANT:
+      // Don't use applicant.save() here.
+      // Old applicants may not have newly required fields.
+
+      const updatedApplicant = await Applicant.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            status: "rejected",
+          },
+        },
+        {
+          new: true,
+          runValidators: false,
+        },
+      );
 
       return res.status(200).json({
         success: true,
         message: "Applicant rejected",
-        applicant,
+        applicant: updatedApplicant,
       });
     }
 
+    /* ================================
+       ACCEPT / PASS APPLICANT
+    ================================ */
+
     const normalizedEmail = applicant.email.toLowerCase().trim();
 
+    // Check whether user already exists
     let user = await User.findOne({
       email: normalizedEmail,
     });
 
-    if (user) {
-      applicant.status = "passed";
+    /* ================================
+       USER ALREADY EXISTS
+    ================================ */
 
-      await applicant.save();
+    if (user) {
+      // Update only applicant status.
+      // This avoids validating missing fields in old applicant documents.
+      const updatedApplicant = await Applicant.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            status: "passed",
+          },
+        },
+        {
+          new: true,
+          runValidators: false,
+        },
+      );
 
       return res.status(200).json({
         success: true,
         message:
-          "Applicant accepted! Student account is already active in database.",
-        applicant,
+          "Applicant accepted! Student account is already active in the database.",
+        applicant: updatedApplicant,
         student: {
           id: user._id,
           firstName: user.firstName,
@@ -235,17 +294,25 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
+    /* ================================
+       CREATE NEW STUDENT ACCOUNT
+    ================================ */
+
     const nameParts = (applicant.fullName || "Student User")
       .trim()
       .split(/\s+/);
 
     const firstName = nameParts[0] || "Student";
-    const lastName = nameParts.slice(1).join(" ") || firstName;
 
+    const lastName =
+      nameParts.length > 1 ? nameParts.slice(1).join(" ") : "User";
+
+    // Generate temporary password
     const temporaryPassword = crypto.randomBytes(4).toString("hex") + "Aa1!";
 
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
+    // Create student account
     user = await User.create({
       firstName,
       lastName,
@@ -263,9 +330,25 @@ const updateApplicantStatus = async (req, res) => {
       mustChangePassword: true,
     });
 
-    applicant.status = "passed";
+    // IMPORTANT:
+    // Update ONLY the applicant status.
+    // Do not use applicant.save().
+    const updatedApplicant = await Applicant.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          status: "passed",
+        },
+      },
+      {
+        new: true,
+        runValidators: false,
+      },
+    );
 
-    await applicant.save();
+    /* ================================
+       SEND EMAIL
+    ================================ */
 
     let emailSent = false;
 
@@ -276,12 +359,31 @@ const updateApplicantStatus = async (req, res) => {
           subject: "ASTU MSJ Bootcamp - Student Account",
           html: `
             <h2>Congratulations, ${firstName}!</h2>
-            <p>Your application to the ASTU MSJ Bootcamp has been accepted.</p>
+
+            <p>
+              Your application to the ASTU MSJ Bootcamp
+              has been accepted.
+            </p>
+
             <p>Your student account has been created.</p>
-            <p><strong>Email:</strong> ${normalizedEmail}</p>
-            <p><strong>Temporary Password:</strong> ${temporaryPassword}</p>
-            <p>Please log in and change your password immediately.</p>
-            <p>ASTU MSJ Bootcamp Management System</p>
+
+            <p>
+              <strong>Email:</strong>
+              ${normalizedEmail}
+            </p>
+
+            <p>
+              <strong>Temporary Password:</strong>
+              ${temporaryPassword}
+            </p>
+
+            <p>
+              Please log in and change your password immediately.
+            </p>
+
+            <p>
+              ASTU MSJ Bootcamp Management System
+            </p>
           `,
         });
 
@@ -296,7 +398,9 @@ const updateApplicantStatus = async (req, res) => {
       message: emailSent
         ? "Applicant accepted and student account created successfully. The temporary password has been sent to the student's email."
         : "Applicant accepted and student account created successfully, but the temporary password could not be sent to the student's email.",
-      applicant,
+
+      applicant: updatedApplicant,
+
       student: {
         id: user._id,
         firstName: user.firstName,
@@ -311,6 +415,7 @@ const updateApplicantStatus = async (req, res) => {
         role: user.role,
         mustChangePassword: user.mustChangePassword,
       },
+
       emailSent,
     });
   } catch (error) {

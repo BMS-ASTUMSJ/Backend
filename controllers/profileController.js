@@ -1,15 +1,13 @@
 const cloudinary = require("../config/cloudinary");
 const User = require("../models/user");
 
-// ============================================================
-// GET PROFILE
-// ============================================================
-
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .select("-password")
-      .populate("batch", "name status startDate endDate")
+      .populate("assignedMentors", "firstName lastName email gender phone")
+      .populate("assignedStudents", "firstName lastName email gender phone atRisk")
+      .populate("batch", "name status startDate endDate description")
       .populate("batchHistory.batch", "name status startDate endDate");
 
     if (!user) {
@@ -24,18 +22,12 @@ const getProfile = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error("Get profile error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Failed to load profile.",
     });
   }
 };
-
-// ============================================================
-// UPDATE PROFILE + UPLOAD IMAGE
-// ============================================================
 
 const uploadProfileImage = async (req, res) => {
   try {
@@ -48,47 +40,27 @@ const uploadProfileImage = async (req, res) => {
       });
     }
 
-    const { firstName, phone, bio } = req.body;
+    const { firstName, lastName, phone, bio } = req.body;
 
-    // ----------------------------------------------------------
-    // UPDATE FIRST NAME
-    // ----------------------------------------------------------
-
-    if (firstName !== undefined) {
-      user.firstName = firstName.trim();
+    if (user.role !== "student") {
+      if (firstName !== undefined) user.firstName = firstName.trim();
+      if (lastName !== undefined) user.lastName = lastName.trim();
+      if (phone !== undefined) user.phone = phone.trim();
     }
-
-    // ----------------------------------------------------------
-    // UPDATE PHONE
-    // ----------------------------------------------------------
-
-    if (phone !== undefined) {
-      user.phone = phone.trim();
-    }
-
-    // ----------------------------------------------------------
-    // UPDATE BIO
-    // ----------------------------------------------------------
 
     if (bio !== undefined) {
-      user.bio = bio.trim();
+      user.bio = bio.trim().slice(0, 300);
     }
 
-    // ----------------------------------------------------------
-    // UPLOAD PROFILE IMAGE
-    // ----------------------------------------------------------
-
     if (req.file) {
-      // Delete old image from Cloudinary
       if (user.profileImage?.publicId) {
         try {
           await cloudinary.uploader.destroy(user.profileImage.publicId);
         } catch (error) {
-          console.error("Failed to delete old Cloudinary image:", error);
+          console.error(error);
         }
       }
 
-      // Upload new image
       const uploadResult = await new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           {
@@ -101,7 +73,7 @@ const uploadProfileImage = async (req, res) => {
             } else {
               resolve(result);
             }
-          },
+          }
         );
 
         stream.end(req.file.buffer);
@@ -113,18 +85,12 @@ const uploadProfileImage = async (req, res) => {
       };
     }
 
-    // ----------------------------------------------------------
-    // SAVE
-    // ----------------------------------------------------------
-
     await user.save();
-
-    // ----------------------------------------------------------
-    // GET UPDATED USER
-    // ----------------------------------------------------------
 
     const updatedUser = await User.findById(user._id)
       .select("-password")
+      .populate("assignedMentors", "firstName lastName email gender phone")
+      .populate("assignedStudents", "firstName lastName email gender phone atRisk")
       .populate("batch", "name status startDate endDate")
       .populate("batchHistory.batch", "name status startDate endDate");
 
@@ -134,18 +100,12 @@ const uploadProfileImage = async (req, res) => {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Profile update error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Failed to update profile.",
     });
   }
 };
-
-// ============================================================
-// REMOVE PROFILE IMAGE
-// ============================================================
 
 const removeProfileImage = async (req, res) => {
   try {
@@ -158,16 +118,14 @@ const removeProfileImage = async (req, res) => {
       });
     }
 
-    // Delete from Cloudinary
     if (user.profileImage?.publicId) {
       try {
         await cloudinary.uploader.destroy(user.profileImage.publicId);
       } catch (error) {
-        console.error("Failed to delete Cloudinary image:", error);
+        console.error(error);
       }
     }
 
-    // Clear database
     user.profileImage = {
       url: "",
       publicId: "",
@@ -183,8 +141,6 @@ const removeProfileImage = async (req, res) => {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Remove profile image error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Failed to remove profile image.",

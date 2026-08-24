@@ -1,5 +1,25 @@
 const mongoose = require("mongoose");
 
+const checkSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["Present", "Absent", "Late", "Excused", null],
+      default: null,
+    },
+    markedAt: {
+      type: Date,
+      default: null,
+    },
+    markedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const attendanceSchema = new mongoose.Schema(
   {
     studentId: {
@@ -9,116 +29,108 @@ const attendanceSchema = new mongoose.Schema(
       index: true,
     },
 
-    batchId: {
+    mentorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Batch",
+      ref: "User",
       required: true,
-      index: true,
     },
 
     teamId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Team",
-      required: true,
-      index: true,
+      default: null,
     },
 
-    sessionId: {
+    batchId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Session",
-      required: true,
-      index: true,
+      ref: "Batch",
+      default: null,
     },
 
     week: {
       type: Number,
       required: true,
+      min: 1,
+      max: 12,
       index: true,
+    },
+
+    dayName: {
+      type: String,
+      enum: [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+      ],
+      required: true,
+    },
+
+    meetingType: {
+      type: String,
+      enum: [
+        "Daily Meeting",
+        "Sunday Weekly Meeting",
+      ],
+      required: true,
     },
 
     sessionType: {
       type: String,
-      required: true,
-      trim: true,
+      default: "Daily Meeting",
     },
 
     sessionName: {
       type: String,
-      required: true,
-      trim: true,
+      default: "",
     },
 
     date: {
       type: Date,
-      required: true,
-      index: true,
+      default: Date.now,
     },
-
-    gender: {
-      type: String,
-      enum: ["Male", "Female"],
-      required: true,
-    },
-
-    /*
-      First attendance check for this session.
-
-      Example:
-      Session starts at 9:00
-      First check can be performed according
-      to the session attendance window.
-    */
 
     firstCheck: {
-      status: {
-        type: String,
-        enum: ["Present", "Absent", "Late", "Excused"],
-        default: null,
-      },
-
-      markedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-
-      timestamp: {
-        type: Date,
-      },
+      type: checkSchema,
+      default: () => ({}),
     },
 
     secondCheck: {
-      status: {
-        type: String,
-        enum: ["Present", "Absent", "Late", "Excused"],
-        default: null,
-      },
+      type: checkSchema,
+      default: () => ({}),
+    },
 
-      markedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-
-      timestamp: {
-        type: Date,
-      },
+    status: {
+      type: String,
+      enum: [
+        "Present",
+        "Absent",
+        "Late",
+        "Excused",
+        "Not Marked",
+      ],
+      default: "Not Marked",
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 attendanceSchema.index(
   {
     studentId: 1,
-    teamId: 1,
-    sessionId: 1,
+    week: 1,
+    dayName: 1,
   },
   {
     unique: true,
-    name: "student_team_session_unique",
-  },
+  }
 );
 
 module.exports =
-  mongoose.models.Attendance || mongoose.model("Attendance", attendanceSchema);
+  mongoose.models.Attendance ||
+  mongoose.model("Attendance", attendanceSchema);
