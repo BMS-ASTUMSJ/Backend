@@ -6,26 +6,51 @@ const Team = require("../models/team");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
-const { calculateStudentRisk } = require("../services/atRiskService");
+let calculateStudentRisk = null;
 
-const VALID_STATUSES = ["Present", "Absent", "Late", "Excused"];
+try {
+  const riskService = require("../services/atRiskService");
+  calculateStudentRisk =
+    riskService.calculateStudentRisk || riskService;
+} catch (error) {
+  calculateStudentRisk = null;
+}
 
-const VALID_CHECK_TYPES = ["first", "second"];
+const VALID_STATUSES = [
+  "Present",
+  "Absent",
+  "Late",
+  "Excused",
+];
+
+const VALID_CHECK_TYPES = [
+  "first",
+  "second",
+];
+
+const GENERAL_SESSION_TYPES = [
+  "Lecture",
+  "Experience Sharing",
+  "Contest",
+];
+
+const TEAM_SESSION_TYPES = [
+  "Daily Standup",
+  "Daily Meeting",
+  "Sunday Meeting",
+  "Sunday Weekly Meeting",
+];
 
 const getAttendanceWeight = (status) => {
   switch (status) {
     case "Present":
-      return 1.0;
-
+      return 1;
     case "Late":
       return 0.5;
-
     case "Absent":
-      return 0.0;
-
+      return 0;
     case "Excused":
       return null;
-
     default:
       return null;
   }
@@ -34,17 +59,19 @@ const getAttendanceWeight = (status) => {
 const calculateChecks = (records = []) => {
   let earnedPoints = 0;
   let applicableChecks = 0;
-
   let presentChecks = 0;
   let absentChecks = 0;
   let lateChecks = 0;
   let excusedChecks = 0;
 
   records.forEach((record) => {
-    const checks = [record.firstCheck, record.secondCheck];
+    const checks = [
+      record?.firstCheck,
+      record?.secondCheck,
+    ];
 
     checks.forEach((check) => {
-      if (!check || !check.status) {
+      if (!check?.status) {
         return;
       }
 
@@ -72,7 +99,9 @@ const calculateChecks = (records = []) => {
 
   const attendanceRate =
     applicableChecks > 0
-      ? Number(((earnedPoints / applicableChecks) * 100).toFixed(1))
+      ? Number(
+          ((earnedPoints / applicableChecks) * 100).toFixed(1)
+        )
       : 0;
 
   return {
@@ -86,17 +115,56 @@ const calculateChecks = (records = []) => {
   };
 };
 
+const calculateOverallStatus = (
+  firstStatus,
+  secondStatus
+) => {
+  const statuses = [
+    firstStatus,
+    secondStatus,
+  ].filter(Boolean);
+
+  if (statuses.length === 0) {
+    return "Not Marked";
+  }
+
+  if (statuses.includes("Absent")) {
+    return "Absent";
+  }
+
+  if (statuses.includes("Late")) {
+    return "Late";
+  }
+
+  if (statuses.includes("Excused")) {
+    return "Excused";
+  }
+
+  if (statuses.includes("Present")) {
+    return "Present";
+  }
+
+  return "Not Marked";
+};
+
 const findMentorTeam = async (mentorId) => {
   return Team.findOne({
     mentors: mentorId,
   });
 };
 
-const markAttendance = async (req, res) => {
+const markBulkAttendance = async (req, res) => {
   try {
-    const { studentId, sessionId, checkType, status } = req.body;
+    const {
+      sessionId,
+      week,
+      dayName,
+      meetingType,
+      attendanceList,
+    } = req.body;
 
     const mentorId = req.user?._id;
+    const mentorGender = req.user?.gender;
 
     if (!mentorId) {
       return res.status(401).json({
@@ -105,106 +173,13 @@ const markAttendance = async (req, res) => {
       });
     }
 
-    if (!studentId || !sessionId || !checkType || !status) {
+    if (
+      !Array.isArray(attendanceList) ||
+      attendanceList.length === 0
+    ) {
       return res.status(400).json({
         success: false,
-        message: "studentId, sessionId, checkType and status are required",
-      });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(studentId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid student ID",
-      });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid session ID",
-      });
-    }
-
-    if (!VALID_CHECK_TYPES.includes(checkType)) {
-      return res.status(400).json({
-        success: false,
-        message: "checkType must be 'first' or 'second'",
-      });
-    }
-
-    if (!VALID_STATUSES.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid attendance status",
-      });
-    }
-
-    const session = await Session.findById(sessionId);
-
-    if (!session) {
-      return res.status(404).json({
-        success: false,
-        message: "Session not found",
-      });
-    }
-
-    if (!session.isActive) {
-      return res.status(400).json({
-        success: false,
-        message: "This session is no longer active",
-      });
-    }
-
-    const student = await User.findById(studentId);
-
-    if (!student) {
-      return res.status(404).json({
-        success: false,
-        message: "Student not found",
-      });
-    }
-
-    if (student.role !== "student") {
-      return res.status(403).json({
-        success: false,
-        message: "Attendance can only be marked for students",
-      });
-    }
-
-    if (!student.batch) {
-      return res.status(400).json({
-        success: false,
-        message: "Student is not assigned to a batch",
-      });
-    }
-
-    if (String(student.batch) !== String(session.batch)) {
-      return res.status(403).json({
-        success: false,
-        message: "Student does not belong to this session's batch",
-      });
-    }
-
-    if (!req.user.gender) {
-      return res.status(403).json({
-        success: false,
-        message: "Mentor gender information is required",
-      });
-    }
-
-    if (!student.gender) {
-      return res.status(403).json({
-        success: false,
-        message: "Student gender information is required",
-      });
-    }
-
-    if (student.gender !== req.user.gender) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "You can only mark attendance for students in your own gender group",
+        message: "attendanceList array is required",
       });
     }
 
@@ -217,153 +192,478 @@ const markAttendance = async (req, res) => {
       });
     }
 
-    const studentBelongsToTeam = (team.students || []).some(
-      (id) => String(id) === String(studentId),
-    );
+    let session = null;
 
-    if (!studentBelongsToTeam) {
-      return res.status(403).json({
-        success: false,
-        message: "Student is not assigned to your team",
-      });
+    if (
+      sessionId &&
+      mongoose.Types.ObjectId.isValid(sessionId)
+    ) {
+      session = await Session.findById(sessionId);
     }
 
-    if (team.gender !== student.gender) {
-      return res.status(403).json({
-        success: false,
-        message: "Student does not belong to your team's gender",
-      });
-    }
+    const targetWeek =
+      Number(week) || session?.week || 1;
 
-    if (!team.batch) {
-      return res.status(400).json({
-        success: false,
-        message: "Your team does not have a batch assigned",
-      });
-    }
+    const targetDayName =
+      dayName ||
+      (session?.date
+        ? new Date(session.date).toLocaleDateString(
+            "en-US",
+            {
+              weekday: "long",
+            }
+          )
+        : "Monday");
 
-    if (String(team.batch) !== String(session.batch)) {
-      return res.status(403).json({
-        success: false,
-        message: "This session does not belong to your team's batch",
-      });
-    }
+    const targetMeetingType =
+      meetingType ||
+      session?.type ||
+      (targetDayName === "Sunday"
+        ? "Sunday Weekly Meeting"
+        : "Daily Meeting");
 
-    const checkField = checkType === "first" ? "firstCheck" : "secondCheck";
+    const targetSessionName =
+      session?.name ||
+      `Week ${targetWeek} - ${targetDayName} (${targetMeetingType})`;
 
-    const weight = getAttendanceWeight(status);
+    const targetDate =
+      session?.date || new Date();
 
-    const update = {
-      studentId,
-      batchId: session.batch,
-      teamId: team._id,
-      sessionId: session._id,
-      week: session.week,
-      sessionType: session.type,
-      sessionName: session.name,
-      date: session.date,
-      gender: student.gender,
+    const batchId =
+      session?.batch || team.batch;
 
-      [checkField]: {
-        status,
-        markedBy: mentorId,
-        timestamp: new Date(),
-      },
-    };
+    const operations = [];
+    const studentIdsToProcess = [];
 
-    const record = await Attendance.findOneAndUpdate(
-      {
+    for (const item of attendanceList) {
+      const studentId = item?.studentId;
+
+      if (
+        !studentId ||
+        !mongoose.Types.ObjectId.isValid(studentId)
+      ) {
+        continue;
+      }
+
+      const firstStatus =
+        VALID_STATUSES.includes(item?.firstCheck)
+          ? item.firstCheck
+          : null;
+
+      const secondStatus =
+        VALID_STATUSES.includes(item?.secondCheck)
+          ? item.secondCheck
+          : null;
+
+      if (!firstStatus && !secondStatus) {
+        continue;
+      }
+
+      const filter = session
+        ? {
+            studentId,
+            sessionId: session._id,
+          }
+        : {
+            studentId,
+            week: targetWeek,
+            dayName: targetDayName,
+            batchId,
+          };
+
+      const existingRecord =
+        await Attendance.findOne(filter);
+
+      const finalFirstStatus =
+        firstStatus ||
+        existingRecord?.firstCheck?.status ||
+        null;
+
+      const finalSecondStatus =
+        secondStatus ||
+        existingRecord?.secondCheck?.status ||
+        null;
+
+      const updateData = {
         studentId,
+        mentorId,
         teamId: team._id,
-        sessionId: session._id,
-      },
-      {
-        $set: update,
-      },
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-        setDefaultsOnInsert: true,
-      },
-    );
+        batchId,
+        week: targetWeek,
+        dayName: targetDayName,
+        meetingType: targetMeetingType,
+        sessionType: targetMeetingType,
+        sessionName: targetSessionName,
+        date: targetDate,
+        gender: mentorGender || "Female",
+        status: calculateOverallStatus(
+          finalFirstStatus,
+          finalSecondStatus
+        ),
+      };
 
-    const recordStatistics = calculateChecks([record]);
+      if (firstStatus) {
+        updateData.firstCheck = {
+          status: firstStatus,
+          markedBy: mentorId,
+          markedAt: new Date(),
+          timestamp: new Date(),
+        };
+      }
 
-    const risk = await calculateStudentRisk(studentId, session.batch);
+      if (secondStatus) {
+        updateData.secondCheck = {
+          status: secondStatus,
+          markedBy: mentorId,
+          markedAt: new Date(),
+          timestamp: new Date(),
+        };
+      }
+
+      if (session) {
+        updateData.sessionId = session._id;
+      }
+
+      operations.push({
+        updateOne: {
+          filter,
+          update: {
+            $set: updateData,
+          },
+          upsert: true,
+        },
+      });
+
+      studentIdsToProcess.push(studentId);
+    }
+
+    if (operations.length > 0) {
+      await Attendance.bulkWrite(operations);
+    }
+
+    if (
+      calculateStudentRisk &&
+      typeof calculateStudentRisk === "function" &&
+      batchId
+    ) {
+      for (const studentId of studentIdsToProcess) {
+        try {
+          await calculateStudentRisk(
+            studentId,
+            batchId
+          );
+        } catch (error) {}
+      }
+    }
 
     return res.status(200).json({
       success: true,
-
-      message: "Attendance saved successfully",
-
-      record,
-
-      session,
-
-      attendance: {
-        status,
-        weight,
-        isExcused: status === "Excused",
-        recordRate: recordStatistics.attendanceRate,
-        earnedPoints: recordStatistics.earnedPoints,
-        applicableChecks: recordStatistics.applicableChecks,
-      },
-
-      risk,
+      message: `Attendance for ${operations.length} students submitted successfully!`,
     });
   } catch (error) {
-    console.error("MARK ATTENDANCE ERROR:", error);
-
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: "Attendance for this student/session was already recorded",
-        error: error.message,
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: "Server error while marking attendance",
+      message:
+        "Server error while saving bulk attendance",
       error: error.message,
     });
   }
 };
 
-const getMentorStudents = async (req, res) => {
+const markAttendance = async (req, res) => {
   try {
-    const mentorId = req.user._id;
-    const mentorGender = req.user.gender;
+    const {
+      studentId,
+      sessionId,
+      week,
+      dayName,
+      checkType,
+      status,
+    } = req.body;
 
-    if (!mentorGender) {
-      return res.status(403).json({
+    const mentorId = req.user?._id;
+
+    if (!mentorId) {
+      return res.status(401).json({
         success: false,
-        message: "Mentor gender information is required",
+        message: "Mentor authentication required",
       });
     }
 
-    const team = await Team.findOne({
-      mentors: mentorId,
-    })
-      .populate("batch", "name status startDate endDate")
-      .populate(
-        "students",
-        "firstName lastName fullName schoolId gender email batch",
-      );
+    if (
+      !studentId ||
+      !checkType ||
+      !status
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "studentId, checkType and status are required",
+      });
+    }
+
+    if (
+      !mongoose.Types.ObjectId.isValid(studentId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid student ID",
+      });
+    }
+
+    if (
+      !VALID_CHECK_TYPES.includes(checkType) ||
+      !VALID_STATUSES.includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid checkType or status",
+      });
+    }
+
+    const team =
+      await findMentorTeam(mentorId);
 
     if (!team) {
-      return res.status(200).json({
-        success: true,
-        teamName: null,
-        teamId: null,
-        batch: null,
-        students: [],
+      return res.status(404).json({
+        success: false,
+        message:
+          "You are not assigned to a team",
       });
     }
 
-    const students = (team.students || []).filter(
-      (student) => student.gender === mentorGender,
+    let session = null;
+
+    if (
+      sessionId &&
+      mongoose.Types.ObjectId.isValid(sessionId)
+    ) {
+      session =
+        await Session.findById(sessionId);
+    }
+
+    const targetWeek =
+      Number(week) ||
+      session?.week ||
+      1;
+
+    const targetDayName =
+      dayName ||
+      (session?.date
+        ? new Date(
+            session.date
+          ).toLocaleDateString(
+            "en-US",
+            {
+              weekday: "long",
+            }
+          )
+        : "Monday");
+
+    const targetMeetingType =
+      session?.type ||
+      (targetDayName === "Sunday"
+        ? "Sunday Weekly Meeting"
+        : "Daily Meeting");
+
+    const targetSessionName =
+      session?.name ||
+      `${targetDayName} (${targetMeetingType})`;
+
+    const targetDate =
+      session?.date ||
+      new Date();
+
+    const batchId =
+      session?.batch ||
+      team.batch;
+
+    const checkField =
+      checkType === "first"
+        ? "firstCheck"
+        : "secondCheck";
+
+    const filter = session
+      ? {
+          studentId,
+          sessionId: session._id,
+        }
+      : {
+          studentId,
+          week: targetWeek,
+          dayName: targetDayName,
+          batchId,
+        };
+
+    const existingRecord =
+      await Attendance.findOne(filter);
+
+    const firstStatus =
+      checkType === "first"
+        ? status
+        : existingRecord?.firstCheck?.status ||
+          null;
+
+    const secondStatus =
+      checkType === "second"
+        ? status
+        : existingRecord?.secondCheck?.status ||
+          null;
+
+    const update = {
+      studentId,
+      mentorId,
+      batchId,
+      teamId: team._id,
+      week: targetWeek,
+      dayName: targetDayName,
+      meetingType: targetMeetingType,
+      sessionType: targetMeetingType,
+      sessionName: targetSessionName,
+      date: targetDate,
+      gender:
+        req.user?.gender || "Female",
+      status: calculateOverallStatus(
+        firstStatus,
+        secondStatus
+      ),
+      [checkField]: {
+        status,
+        markedBy: mentorId,
+        markedAt: new Date(),
+        timestamp: new Date(),
+      },
+    };
+
+    if (session) {
+      update.sessionId =
+        session._id;
+    }
+
+    const record =
+      await Attendance.findOneAndUpdate(
+        filter,
+        {
+          $set: update,
+        },
+        {
+          new: true,
+          upsert: true,
+          setDefaultsOnInsert: true,
+        }
+      );
+
+    const statistics =
+      calculateChecks([record]);
+
+    let risk = null;
+
+    if (
+      calculateStudentRisk &&
+      typeof calculateStudentRisk ===
+        "function" &&
+      batchId
+    ) {
+      try {
+        risk =
+          await calculateStudentRisk(
+            studentId,
+            batchId
+          );
+      } catch (error) {}
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Attendance saved successfully",
+      record,
+      session,
+      attendance: {
+        status,
+        weight:
+          getAttendanceWeight(status),
+        isExcused:
+          status === "Excused",
+        recordRate:
+          statistics.attendanceRate,
+        earnedPoints:
+          statistics.earnedPoints,
+        applicableChecks:
+          statistics.applicableChecks,
+      },
+      risk,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message:
+        "Server error while marking attendance",
+      error: error.message,
+    });
+  }
+};
+
+const getMentorStudents = async (
+  req,
+  res
+) => {
+  try {
+    const mentorId =
+      req.user?._id;
+
+    const mentorGender =
+      req.user?.gender;
+
+    if (!mentorId) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Mentor authentication required",
+      });
+    }
+
+    const team =
+      await Team.findOne({
+        mentors: mentorId,
+      })
+        .populate(
+          "batch",
+          "name status startDate endDate"
+        )
+        .populate(
+          "students",
+          "firstName lastName fullName schoolId gender email batch"
+        );
+
+    if (!team) {
+      const mentor =
+        await User.findById(
+          mentorId
+        ).populate(
+          "assignedStudents",
+          "firstName lastName fullName schoolId gender email batch"
+        );
+
+      return res.status(200).json({
+        success: true,
+        teamName:
+          "Assigned Students",
+        teamId: mentorId,
+        batch:
+          mentor?.batch || null,
+        students:
+          mentor?.assignedStudents || [],
+      });
+    }
+
+    const students = (
+      team.students || []
+    ).filter(
+      (student) =>
+        !mentorGender ||
+        student.gender === mentorGender
     );
 
     return res.status(200).json({
@@ -376,420 +676,415 @@ const getMentorStudents = async (req, res) => {
       students,
     });
   } catch (error) {
-    console.error("getMentorStudents error:", error);
-
     return res.status(500).json({
       success: false,
-      message: "Server error while getting mentor students",
+      message:
+        "Server error while getting mentor students",
+      error: error.message,
     });
   }
 };
 
-const getTeamRecordsForSession = async (req, res) => {
+const getTeamRecordsForSession = async (
+  req,
+  res
+) => {
   try {
-    const { sessionId } = req.query;
+    const {
+      sessionId,
+      week,
+      dayName,
+    } = req.query;
 
-    if (!sessionId) {
-      return res.status(400).json({
+    const mentorId =
+      req.user?._id;
+
+    if (!mentorId) {
+      return res.status(401).json({
         success: false,
-        message: "sessionId query param is required",
+        message:
+          "Mentor authentication required",
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid session ID",
+    const team =
+      await Team.findOne({
+        mentors: mentorId,
       });
-    }
 
-    const session = await Session.findById(sessionId);
+    const filter = {};
 
-    if (!session) {
+    if (team) {
+      filter.teamId =
+        team._id;
+    } else {
       return res.status(404).json({
         success: false,
-        message: "Session not found",
+        message:
+          "You are not assigned to a team",
       });
     }
 
-    const team = await Team.findOne({
-      mentors: req.user._id,
-    });
-
-    if (!team) {
-      return res.status(200).json({
-        success: true,
-        records: [],
-      });
-    }
-
-    if (String(team.batch) !== String(session.batch)) {
-      return res.status(403).json({
-        success: false,
-        message: "This session does not belong to your team's batch",
-      });
-    }
-
-    const records = await Attendance.find({
-      teamId: team._id,
-      sessionId: session._id,
-      gender: req.user.gender,
-    })
-      .populate(
-        "studentId",
-        "firstName lastName fullName schoolId gender email",
+    if (
+      sessionId &&
+      mongoose.Types.ObjectId.isValid(
+        sessionId
       )
-      .populate("firstCheck.markedBy", "firstName lastName email")
-      .populate("secondCheck.markedBy", "firstName lastName email")
-      .sort({
-        createdAt: 1,
-      });
+    ) {
+      filter.sessionId =
+        sessionId;
+    }
+
+    if (week) {
+      filter.week =
+        Number(week);
+    }
+
+    if (dayName) {
+      filter.dayName =
+        dayName;
+    }
+
+    const records =
+      await Attendance.find(filter)
+        .populate(
+          "studentId",
+          "firstName lastName fullName schoolId gender email"
+        )
+        .populate(
+          "firstCheck.markedBy",
+          "firstName lastName email"
+        )
+        .populate(
+          "secondCheck.markedBy",
+          "firstName lastName email"
+        )
+        .sort({
+          date: 1,
+          createdAt: 1,
+        });
 
     return res.status(200).json({
       success: true,
       teamId: team._id,
-      teamName: team.name,
-      batchId: team.batch,
-      gender: req.user.gender,
-      session,
+      teamName:
+        team.name || "My Team",
       records,
     });
   } catch (error) {
-    console.error("getTeamRecordsForSession error:", error);
-
     return res.status(500).json({
       success: false,
-      message: "Server error while getting team attendance records",
+      message:
+        "Server error while getting team attendance records",
+      error: error.message,
     });
   }
 };
 
-const getStudentAttendance = async (req, res) => {
+const getStudentAttendance = async (
+  req,
+  res
+) => {
   try {
-    const { batchId } = req.query;
+    const { batchId } =
+      req.query;
 
-    const query = {
-      studentId: req.user._id,
-    };
+    const studentId =
+      req.user?._id;
 
-    if (batchId) {
-      if (!mongoose.Types.ObjectId.isValid(batchId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid batch ID",
-        });
-      }
-
-      if (req.user.role !== "admin") {
-        const hasBatchHistory = req.user.batchHistory?.some(
-          (history) =>
-            history.batch && String(history.batch) === String(batchId),
-        );
-
-        const isCurrentBatch =
-          req.user.batch && String(req.user.batch) === String(batchId);
-
-        if (!hasBatchHistory && !isCurrentBatch) {
-          return res.status(403).json({
-            success: false,
-            message: "You do not have access to this batch's attendance",
-          });
-        }
-      }
-
-      query.batchId = batchId;
-    } else if (req.user.batch) {
-      query.batchId = req.user.batch;
+    if (!studentId) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Student authentication required",
+      });
     }
 
-    const records = await Attendance.find(query)
-      .sort({
-        date: -1,
-      })
-      .populate("batchId", "name status startDate endDate")
-      .populate("teamId", "name gender batch")
-      .populate("firstCheck.markedBy", "firstName lastName email")
-      .populate("secondCheck.markedBy", "firstName lastName email");
+    const query = {
+      studentId,
+    };
 
-    const statistics = calculateChecks(records);
+    if (
+      batchId &&
+      mongoose.Types.ObjectId.isValid(
+        batchId
+      )
+    ) {
+      query.batchId =
+        batchId;
+    } else if (
+      req.user?.batch
+    ) {
+      query.batchId =
+        req.user.batch;
+    }
 
-    const riskBatchId = batchId || req.user.batch;
+    const records =
+      await Attendance.find(query)
+        .populate(
+          "batchId",
+          "name status startDate endDate"
+        )
+        .populate(
+          "teamId",
+          "name gender batch"
+        )
+        .sort({
+          date: 1,
+          week: 1,
+          createdAt: 1,
+        });
 
-    const risk = riskBatchId
-      ? await calculateStudentRisk(req.user._id, riskBatchId)
-      : {
-          attendanceIssues: 0,
-          assignmentIssues: 0,
-          totalIssues: 0,
-          isAtRisk: false,
-        };
+    const generalRecords =
+      records.filter((record) =>
+        GENERAL_SESSION_TYPES.includes(
+          record.sessionType
+        )
+      );
+
+    const teamRecords =
+      records.filter((record) =>
+        TEAM_SESSION_TYPES.includes(
+          record.sessionType
+        )
+      );
+
+    const overallStatistics =
+      calculateChecks(records);
+
+    const generalStatistics =
+      calculateChecks(
+        generalRecords
+      );
+
+    const teamStatistics =
+      calculateChecks(
+        teamRecords
+      );
+
+    const riskBatchId =
+      batchId ||
+      req.user?.batch;
+
+    let risk = {
+      isAtRisk: false,
+    };
+
+    if (
+      riskBatchId &&
+      calculateStudentRisk &&
+      typeof calculateStudentRisk ===
+        "function"
+    ) {
+      try {
+        risk =
+          await calculateStudentRisk(
+            studentId,
+            riskBatchId
+          );
+      } catch (error) {}
+    }
 
     return res.status(200).json({
       success: true,
-
       records,
-
-      percentage: statistics.attendanceRate,
-
+      percentage:
+        overallStatistics.attendanceRate,
+      generalPercentage:
+        generalStatistics.attendanceRate,
+      teamPercentage:
+        teamStatistics.attendanceRate,
       summary: {
-        totalSessions: records.length,
-
-        totalChecks: statistics.applicableChecks,
-
-        earnedPoints: statistics.earnedPoints,
-
-        attendedChecks: statistics.earnedPoints,
-
-        presentChecks: statistics.presentChecks,
-
-        absentChecks: statistics.absentChecks,
-
-        lateChecks: statistics.lateChecks,
-
-        excusedChecks: statistics.excusedChecks,
-
-        attendanceRate: statistics.attendanceRate,
+        totalSessions:
+          records.length,
+        totalChecks:
+          overallStatistics.applicableChecks,
+        attendedChecks:
+          overallStatistics.earnedPoints,
+        presentChecks:
+          overallStatistics.presentChecks,
+        absentChecks:
+          overallStatistics.absentChecks,
+        lateChecks:
+          overallStatistics.lateChecks,
+        excusedChecks:
+          overallStatistics.excusedChecks,
+        attendanceRate:
+          overallStatistics.attendanceRate,
+        generalTrack:
+          generalStatistics,
+        teamTrack:
+          teamStatistics,
       },
-
+      generalStats:
+        generalStatistics,
+      teamStats:
+        teamStatistics,
+      overallStats:
+        overallStatistics,
       risk,
     });
   } catch (error) {
-    console.error("getStudentAttendance error:", error);
-
     return res.status(500).json({
       success: false,
-      message: "Server error while getting student attendance",
+      message:
+        "Server error while getting student attendance",
+      error: error.message,
     });
   }
 };
 
-const getAdminAttendanceStats = async (req, res) => {
+const getAdminAttendanceStats = async (
+  req,
+  res
+) => {
   try {
-    const batches = await Batch.find().sort({
-      createdAt: -1,
-    });
+    const batches =
+      await Batch.find().sort({
+        createdAt: -1,
+      });
 
-    const allBatches = await Promise.all(
-      batches.map(async (batch) => {
-        const students = await User.find({
-          batch: batch._id,
-          role: "student",
-        }).select("_id gender");
+    const allBatches =
+      await Promise.all(
+        batches.map(async (batch) => {
+          const students =
+            await User.find({
+              batch: batch._id,
+              role: "student",
+            }).select(
+              "_id gender"
+            );
 
-        const totalStudents = students.length;
+          const totalStudents =
+            students.length;
 
-        const maleStudents = students.filter(
-          (student) => student.gender === "Male",
-        ).length;
+          const maleStudents =
+            students.filter(
+              (student) =>
+                student.gender === "Male"
+            ).length;
 
-        const femaleStudents = students.filter(
-          (student) => student.gender === "Female",
-        ).length;
+          const femaleStudents =
+            students.filter(
+              (student) =>
+                student.gender === "Female"
+            ).length;
 
-        const studentIds = students.map((student) => student._id);
+          const studentIds =
+            students.map(
+              (student) =>
+                student._id
+            );
 
-        const records =
-          studentIds.length > 0
-            ? await Attendance.find({
-                studentId: {
-                  $in: studentIds,
-                },
+          const records =
+            studentIds.length > 0
+              ? await Attendance.find({
+                  studentId: {
+                    $in: studentIds,
+                  },
+                  batchId:
+                    batch._id,
+                })
+              : [];
 
-                batchId: batch._id,
-              }).sort({
-                date: 1,
-              })
-            : [];
+          const statistics =
+            calculateChecks(
+              records
+            );
 
-        const sessionKeys = new Set();
-
-        records.forEach((record) => {
-          sessionKeys.add(String(record.sessionId));
-        });
-
-        const totalSessions = sessionKeys.size;
-
-        let totalEarnedPoints = 0;
-
-        let maleEarnedPoints = 0;
-        let femaleEarnedPoints = 0;
-
-        let totalApplicableChecks = 0;
-        let maleApplicableChecks = 0;
-        let femaleApplicableChecks = 0;
-
-        let presentChecks = 0;
-        let absentChecks = 0;
-        let lateChecks = 0;
-        let excusedChecks = 0;
-
-        records.forEach((record) => {
-          const checks = [record.firstCheck, record.secondCheck];
-
-          checks.forEach((check) => {
-            if (!check || !check.status) {
-              return;
-            }
-
-            const status = check.status;
-            const weight = getAttendanceWeight(status);
-
-            if (status === "Present") {
-              presentChecks++;
-            }
-
-            if (status === "Absent") {
-              absentChecks++;
-            }
-
-            if (status === "Late") {
-              lateChecks++;
-            }
-
-            if (status === "Excused") {
-              excusedChecks++;
-            }
-
-            if (weight === null) {
-              return;
-            }
-
-            totalEarnedPoints += weight;
-            totalApplicableChecks++;
-
-            if (record.gender === "Male") {
-              maleEarnedPoints += weight;
-              maleApplicableChecks++;
-            }
-
-            if (record.gender === "Female") {
-              femaleEarnedPoints += weight;
-              femaleApplicableChecks++;
-            }
-          });
-        });
-
-        const overallAttendanceRate =
-          totalApplicableChecks > 0
-            ? Number(
-                ((totalEarnedPoints / totalApplicableChecks) * 100).toFixed(1),
-              )
-            : 0;
-
-        const maleAttendanceRate =
-          maleApplicableChecks > 0
-            ? Number(
-                ((maleEarnedPoints / maleApplicableChecks) * 100).toFixed(1),
-              )
-            : 0;
-
-        const femaleAttendanceRate =
-          femaleApplicableChecks > 0
-            ? Number(
-                ((femaleEarnedPoints / femaleApplicableChecks) * 100).toFixed(
-                  1,
-                ),
-              )
-            : 0;
-
-        const studentRisks = await Promise.all(
-          students.map(async (student) => {
-            return calculateStudentRisk(student._id, batch._id);
-          }),
-        );
-
-        const atRiskCount = studentRisks.filter(
-          (risk) => risk.isAtRisk === true,
-        ).length;
-
-        return {
-          _id: batch._id,
-          name: batch.name,
-          status: batch.status,
-
-          totalStudents,
-
-          maleStudents,
-
-          femaleStudents,
-
-          totalSessions,
-
-          totalApplicableChecks,
-
-          totalEarnedPoints: Number(totalEarnedPoints.toFixed(2)),
-
-          overallAttendanceRate,
-
-          maleAttendanceRate,
-
-          femaleAttendanceRate,
-
-          presentChecks,
-
-          absentChecks,
-
-          lateChecks,
-
-          excusedChecks,
-
-          atRiskCount,
-        };
-      }),
-    );
+          return {
+            _id: batch._id,
+            name: batch.name,
+            status: batch.status,
+            totalStudents,
+            maleStudents,
+            femaleStudents,
+            totalSessions:
+              records.length,
+            totalApplicableChecks:
+              statistics.applicableChecks,
+            totalEarnedPoints:
+              statistics.earnedPoints,
+            overallAttendanceRate:
+              statistics.attendanceRate,
+            presentChecks:
+              statistics.presentChecks,
+            absentChecks:
+              statistics.absentChecks,
+            lateChecks:
+              statistics.lateChecks,
+            excusedChecks:
+              statistics.excusedChecks,
+          };
+        })
+      );
 
     return res.status(200).json({
       success: true,
       allBatches,
     });
   } catch (error) {
-    console.error("getAdminAttendanceStats error:", error);
-
     return res.status(500).json({
       success: false,
-      message: "Server error while getting attendance statistics",
+      message:
+        "Server error while getting attendance statistics",
+      error: error.message,
     });
   }
 };
 
-const getAdminBatchReport = async (req, res) => {
+const getAdminBatchReport = async (
+  req,
+  res
+) => {
   try {
-    const { batchId } = req.params;
+    const { batchId } =
+      req.params;
 
-    if (!batchId) {
+    if (
+      !batchId ||
+      !mongoose.Types.ObjectId.isValid(
+        batchId
+      )
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Batch ID is required",
+        message:
+          "Valid batch ID is required",
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(batchId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid batch ID",
-      });
-    }
-
-    const batch = await Batch.findById(batchId);
+    const batch =
+      await Batch.findById(
+        batchId
+      );
 
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: "Batch not found",
+        message:
+          "Batch not found",
       });
     }
 
-    const students = await User.find({
-      batch: batchId,
-      role: "student",
-    })
-      .select("_id firstName lastName fullName schoolId gender email")
-      .sort({
-        firstName: 1,
-        lastName: 1,
-      });
+    const students =
+      await User.find({
+        batch: batchId,
+        role: "student",
+      })
+        .select(
+          "_id firstName lastName fullName schoolId gender email"
+        )
+        .sort({
+          firstName: 1,
+          lastName: 1,
+        });
 
-    const studentIds = students.map((student) => student._id);
+    const studentIds =
+      students.map(
+        (student) =>
+          student._id
+      );
 
     const records =
       studentIds.length > 0
@@ -797,206 +1092,119 @@ const getAdminBatchReport = async (req, res) => {
             studentId: {
               $in: studentIds,
             },
-
             batchId,
-          }).sort({
-            date: -1,
           })
         : [];
 
-    const sessionMap = new Map();
+    const studentReports =
+      students.map((student) => {
+        const studentRecords =
+          records.filter(
+            (record) =>
+              String(
+                record.studentId
+              ) ===
+              String(
+                student._id
+              )
+          );
 
-    records.forEach((record) => {
-      const key = String(record.sessionId);
+        const stats =
+          calculateChecks(
+            studentRecords
+          );
 
-      if (!sessionMap.has(key)) {
-        sessionMap.set(key, {
-          sessionId: key,
+        const generalRecords =
+          studentRecords.filter(
+            (record) =>
+              GENERAL_SESSION_TYPES.includes(
+                record.sessionType
+              )
+          );
 
-          week: record.week,
+        const teamRecords =
+          studentRecords.filter(
+            (record) =>
+              TEAM_SESSION_TYPES.includes(
+                record.sessionType
+              )
+          );
 
-          date: record.date,
+        const generalStats =
+          calculateChecks(
+            generalRecords
+          );
 
-          sessionType: record.sessionType,
-
-          sessionName: record.sessionName,
-        });
-      }
-    });
-
-    const totalSessions = sessionMap.size;
-
-    const studentReports = await Promise.all(
-      students.map(async (student) => {
-        const studentRecords = records.filter(
-          (record) => String(record.studentId) === String(student._id),
-        );
-
-        const statistics = calculateChecks(studentRecords);
-
-        const risk = await calculateStudentRisk(student._id, batchId);
+        const teamStats =
+          calculateChecks(
+            teamRecords
+          );
 
         return {
           _id: student._id,
-
-          firstName: student.firstName,
-
-          lastName: student.lastName,
-
+          firstName:
+            student.firstName,
+          lastName:
+            student.lastName,
           fullName:
             student.fullName ||
-            `${student.firstName || ""} ${student.lastName || ""}`.trim(),
-
-          schoolId: student.schoolId,
-
-          gender: student.gender,
-
-          email: student.email,
-
-          percentage: statistics.attendanceRate,
-
-          earnedPoints: statistics.earnedPoints,
-
-          applicableChecks: statistics.applicableChecks,
-
-          presentChecks: statistics.presentChecks,
-
-          absentChecks: statistics.absentChecks,
-
-          lateChecks: statistics.lateChecks,
-
-          excusedChecks: statistics.excusedChecks,
-
-          risk,
-
-          summary: {
-            totalSessions,
-
-            totalChecks: statistics.applicableChecks,
-
-            earnedPoints: statistics.earnedPoints,
-
-            present: statistics.presentChecks,
-
-            absent: statistics.absentChecks,
-
-            late: statistics.lateChecks,
-
-            excused: statistics.excusedChecks,
-
-            attendanceRate: statistics.attendanceRate,
-          },
-
-          records: studentRecords,
+            `${student.firstName || ""} ${
+              student.lastName || ""
+            }`.trim(),
+          schoolId:
+            student.schoolId,
+          gender:
+            student.gender,
+          email:
+            student.email,
+          percentage:
+            stats.attendanceRate,
+          generalPercentage:
+            generalStats.attendanceRate,
+          teamPercentage:
+            teamStats.attendanceRate,
+          summary: stats,
+          generalStats,
+          teamStats,
+          records:
+            studentRecords,
         };
-      }),
-    );
-
-    let totalPresent = 0;
-    let totalAbsent = 0;
-    let totalLate = 0;
-    let totalExcused = 0;
-
-    let totalEarnedPoints = 0;
-    let totalApplicableChecks = 0;
-
-    records.forEach((record) => {
-      const checks = [record.firstCheck, record.secondCheck];
-
-      checks.forEach((check) => {
-        if (!check || !check.status) {
-          return;
-        }
-
-        const status = check.status;
-        const weight = getAttendanceWeight(status);
-
-        if (status === "Present") {
-          totalPresent++;
-        }
-
-        if (status === "Absent") {
-          totalAbsent++;
-        }
-
-        if (status === "Late") {
-          totalLate++;
-        }
-
-        if (status === "Excused") {
-          totalExcused++;
-        }
-
-        if (weight === null) {
-          return;
-        }
-
-        totalEarnedPoints += weight;
-
-        totalApplicableChecks++;
       });
-    });
 
-    const overallAttendanceRate =
-      totalApplicableChecks > 0
-        ? Number(((totalEarnedPoints / totalApplicableChecks) * 100).toFixed(1))
-        : 0;
-
-    const atRiskStudents = studentReports.filter(
-      (student) => student.risk?.isAtRisk === true,
-    );
+    const overallStats =
+      calculateChecks(records);
 
     return res.status(200).json({
       success: true,
-
       batch: {
         _id: batch._id,
-
         name: batch.name,
-
         status: batch.status,
       },
-
       summary: {
-        totalStudents: students.length,
-
-        totalSessions,
-
-        totalApplicableChecks,
-
-        totalEarnedPoints: Number(totalEarnedPoints.toFixed(2)),
-
-        totalPresent,
-
-        totalAbsent,
-
-        totalLate,
-
-        totalExcused,
-
-        overallAttendanceRate,
-
-        atRiskCount: atRiskStudents.length,
+        totalStudents:
+          students.length,
+        totalSessions:
+          records.length,
+        overallAttendanceRate:
+          overallStats.attendanceRate,
       },
-
-      sessions: Array.from(sessionMap.values()).sort(
-        (a, b) => a.week - b.week || new Date(a.date) - new Date(b.date),
-      ),
-
-      students: studentReports,
+      students:
+        studentReports,
     });
   } catch (error) {
-    console.error("getAdminBatchReport error:", error);
-
     return res.status(500).json({
       success: false,
-      message: "Server error while getting batch attendance report",
+      message:
+        "Server error while getting batch report",
+      error: error.message,
     });
   }
 };
 
 module.exports = {
   markAttendance,
+  markBulkAttendance,
   getMentorStudents,
   getTeamRecordsForSession,
   getStudentAttendance,

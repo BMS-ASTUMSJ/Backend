@@ -9,6 +9,13 @@ const sessionSchema = new mongoose.Schema(
       index: true,
     },
 
+    team: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Team",
+      default: null,
+      index: true,
+    },
+
     week: {
       type: Number,
       required: true,
@@ -18,7 +25,13 @@ const sessionSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ["Lecture", "Experience Sharing", "Contest"],
+      enum: [
+        "Lecture",
+        "Experience Sharing",
+        "Contest",
+        "Daily Standup",
+        "Sunday Meeting",
+      ],
       required: true,
       trim: true,
     },
@@ -28,6 +41,7 @@ const sessionSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
     order: {
       type: Number,
       required: true,
@@ -53,7 +67,7 @@ const sessionSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 sessionSchema.index(
@@ -61,7 +75,7 @@ sessionSchema.index(
   {
     unique: true,
     name: "batch_week_name_unique",
-  },
+  }
 );
 
 module.exports =

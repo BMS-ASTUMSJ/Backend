@@ -14,10 +14,6 @@ try {
   sendEmail = null;
 }
 
-// ============================================================
-// CREATE USER
-// ============================================================
-
 const createUser = async (req, res) => {
   try {
     const { firstName, lastName, email, role, gender, batchId, phone } =
@@ -73,7 +69,6 @@ const createUser = async (req, res) => {
     }
 
     const temporaryPassword = crypto.randomBytes(4).toString("hex") + "Aa1!";
-
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
     const user = await User.create({
@@ -83,7 +78,6 @@ const createUser = async (req, res) => {
       phone: phone ? phone.trim() : "",
       gender,
       batch,
-
       batchHistory: batch
         ? [
             {
@@ -93,13 +87,10 @@ const createUser = async (req, res) => {
             },
           ]
         : [],
-
       password: hashedPassword,
       status: "approved",
       role,
       mustChangePassword: true,
-
-      // Student risk status
       atRisk: false,
     });
 
@@ -108,33 +99,18 @@ const createUser = async (req, res) => {
         await sendEmail({
           to: normalizedEmail,
           subject: "Your ASTU MSJ Bootcamp Account",
-
           html: `
             <div style="font-family: Arial, sans-serif; line-height: 1.6;">
               <h2>Welcome to ASTU MSJ Bootcamp</h2>
-
               <p>Hello ${firstName},</p>
-
-              <p>
-                An account has been created for you as a
-                <strong>${role}</strong>.
-              </p>
-
+              <p>An account has been created for you as a <strong>${role}</strong>.</p>
               <p>Your login credentials are:</p>
-
               <p>
                 <strong>Email:</strong> ${normalizedEmail}<br>
                 <strong>Temporary Password:</strong> ${temporaryPassword}
               </p>
-
-              <p>
-                Please change your password after logging in.
-              </p>
-
-              <p>
-                Regards,<br>
-                ASTU MSJ Bootcamp Team
-              </p>
+              <p>Please change your password after logging in.</p>
+              <p>Regards,<br>ASTU MSJ Bootcamp Team</p>
             </div>
           `,
         });
@@ -146,7 +122,6 @@ const createUser = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: `${role} account created successfully.`,
-
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -161,18 +136,12 @@ const createUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create user error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error during creation",
     });
   }
 };
-
-// ============================================================
-// UPDATE USER STATUS
-// ============================================================
 
 const updateUserStatus = async (req, res) => {
   try {
@@ -215,7 +184,7 @@ const updateUserStatus = async (req, res) => {
       {
         new: true,
         runValidators: false,
-      },
+      }
     ).select("-password");
 
     return res.status(200).json({
@@ -224,18 +193,12 @@ const updateUserStatus = async (req, res) => {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Update status error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error updating status",
     });
   }
 };
-
-// ============================================================
-// ASSIGN MENTOR
-// ============================================================
 
 const assignMentor = async (req, res) => {
   try {
@@ -300,11 +263,11 @@ const assignMentor = async (req, res) => {
     }
 
     const oldMentorIds = (student.assignedMentors || []).map((id) =>
-      id.toString(),
+      id.toString()
     );
 
     const removedMentorIds = oldMentorIds.filter(
-      (oldId) => !uniqueMentorIds.includes(oldId),
+      (oldId) => !uniqueMentorIds.includes(oldId)
     );
 
     if (removedMentorIds.length > 0) {
@@ -316,12 +279,11 @@ const assignMentor = async (req, res) => {
           $pull: {
             assignedStudents: student._id,
           },
-        },
+        }
       );
     }
 
     student.assignedMentors = uniqueMentorIds;
-
     await student.save();
 
     await User.updateMany(
@@ -332,7 +294,7 @@ const assignMentor = async (req, res) => {
         $addToSet: {
           assignedStudents: student._id,
         },
-      },
+      }
     );
 
     return res.status(200).json({
@@ -340,19 +302,12 @@ const assignMentor = async (req, res) => {
       message: "Mentors assigned successfully",
     });
   } catch (error) {
-    console.error("Assign mentor error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Server error assigning mentor",
     });
   }
 };
-
-// ============================================================
-// GET STUDENTS
-// ADMIN ONLY
-// ============================================================
 
 const getStudents = async (req, res) => {
   try {
@@ -373,7 +328,6 @@ const getStudents = async (req, res) => {
           message: "Invalid batch ID",
         });
       }
-
       filter.batch = batchId;
     }
 
@@ -403,19 +357,12 @@ const getStudents = async (req, res) => {
       students,
     });
   } catch (error) {
-    console.error("Get students error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching students",
     });
   }
 };
-
-// ============================================================
-// GET MENTORS
-// ADMIN ONLY
-// ============================================================
 
 const getMentors = async (req, res) => {
   try {
@@ -436,7 +383,6 @@ const getMentors = async (req, res) => {
           message: "Invalid batch ID",
         });
       }
-
       filter.batch = batchId;
     }
 
@@ -448,7 +394,7 @@ const getMentors = async (req, res) => {
       .select("-password")
       .populate(
         "assignedStudents",
-        "firstName lastName email gender phone atRisk batch",
+        "firstName lastName email gender phone atRisk batch"
       )
       .populate("batch", "name status startDate endDate")
       .sort({
@@ -461,19 +407,12 @@ const getMentors = async (req, res) => {
       mentors,
     });
   } catch (error) {
-    console.error("Get mentors error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching mentors",
     });
   }
 };
-
-// ============================================================
-// GET MY STUDENTS
-// MENTOR ONLY
-// ============================================================
 
 const getMyStudents = async (req, res) => {
   try {
@@ -513,19 +452,12 @@ const getMyStudents = async (req, res) => {
       students,
     });
   } catch (error) {
-    console.error("Get my students error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching assigned students",
     });
   }
 };
-
-// ============================================================
-// GET MY AT-RISK STATUS
-// STUDENT ONLY
-// ============================================================
 
 const getMyRiskStatus = async (req, res) => {
   try {
@@ -537,7 +469,7 @@ const getMyRiskStatus = async (req, res) => {
     }
 
     const student = await User.findById(req.user._id).select(
-      "_id firstName lastName email role atRisk",
+      "_id firstName lastName email role atRisk"
     );
 
     if (!student) {
@@ -550,7 +482,6 @@ const getMyRiskStatus = async (req, res) => {
     return res.status(200).json({
       success: true,
       atRisk: Boolean(student.atRisk),
-
       student: {
         _id: student._id,
         firstName: student.firstName,
@@ -561,19 +492,12 @@ const getMyRiskStatus = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get my risk status error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching risk status",
     });
   }
 };
-
-// ============================================================
-// GET STUDENT DASHBOARD
-// STUDENT ONLY
-// ============================================================
 
 const getStudentDashboard = async (req, res) => {
   try {
@@ -598,7 +522,6 @@ const getStudentDashboard = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-
       student: {
         _id: student._id,
         firstName: student.firstName,
@@ -611,19 +534,12 @@ const getStudentDashboard = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get student dashboard error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching student dashboard",
     });
   }
 };
-
-// ============================================================
-// UPDATE STUDENT AT-RISK STATUS
-// ADMIN ONLY
-// ============================================================
 
 const updateStudentRiskStatus = async (req, res) => {
   try {
@@ -657,16 +573,13 @@ const updateStudentRiskStatus = async (req, res) => {
     }
 
     student.atRisk = atRisk;
-
     await student.save();
 
     return res.status(200).json({
       success: true,
-
       message: atRisk
         ? "Student marked as at-risk"
         : "Student removed from at-risk status",
-
       student: {
         _id: student._id,
         firstName: student.firstName,
@@ -676,19 +589,12 @@ const updateStudentRiskStatus = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update student risk status error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error updating student risk status",
     });
   }
 };
-
-// ============================================================
-// GET ALL AT-RISK STUDENTS
-// ADMIN ONLY
-// ============================================================
 
 const getAtRiskStudents = async (req, res) => {
   try {
@@ -706,7 +612,6 @@ const getAtRiskStudents = async (req, res) => {
           message: "Invalid batch ID",
         });
       }
-
       filter.batch = batchId;
     }
 
@@ -725,18 +630,12 @@ const getAtRiskStudents = async (req, res) => {
       students,
     });
   } catch (error) {
-    console.error("Get at-risk students error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching at-risk students",
     });
   }
 };
-
-// ============================================================
-// DELETE USER
-// ============================================================
 
 const deleteUser = async (req, res) => {
   try {
@@ -772,7 +671,7 @@ const deleteUser = async (req, res) => {
           $pull: {
             assignedStudents: user._id,
           },
-        },
+        }
       );
     }
 
@@ -783,7 +682,7 @@ const deleteUser = async (req, res) => {
           $pull: {
             assignedMentors: user._id,
           },
-        },
+        }
       );
     }
 
@@ -794,18 +693,12 @@ const deleteUser = async (req, res) => {
       message: "User deleted successfully",
     });
   } catch (error) {
-    console.error("Delete user error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error deleting user",
     });
   }
 };
-
-// ============================================================
-// GET BLACKLISTED USERS
-// ============================================================
 
 const getBlacklistedUsers = async (req, res) => {
   try {
@@ -821,8 +714,6 @@ const getBlacklistedUsers = async (req, res) => {
       users,
     });
   } catch (error) {
-    console.error("Get blacklist error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching blacklist",
@@ -830,18 +721,14 @@ const getBlacklistedUsers = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET PROFILE
-// ============================================================
-
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .select("-password")
-      .populate("assignedMentors")
-      .populate("assignedStudents")
-      .populate("batch")
-      .populate("batchHistory.batch");
+      .populate("assignedMentors", "firstName lastName email gender phone")
+      .populate("assignedStudents", "firstName lastName email gender phone atRisk")
+      .populate("batch", "name status startDate endDate description")
+      .populate("batchHistory.batch", "name status startDate endDate");
 
     if (!user) {
       return res.status(404).json({
@@ -855,8 +742,6 @@ const getProfile = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error("Get profile error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error fetching profile",
@@ -864,23 +749,17 @@ const getProfile = async (req, res) => {
   }
 };
 
-// ============================================================
-// UPDATE PROFILE
-// ============================================================
-
 const updateProfile = async (req, res) => {
   try {
     const {
       firstName,
       lastName,
-      gender,
       phone,
-      schoolId,
+      bio,
+      profileImage,
       githubUrl,
       leetcodeUrl,
       codeforcesUrl,
-      bio,
-      profileImage,
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -892,24 +771,12 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    if (firstName !== undefined) {
-      user.firstName = firstName.trim();
+    if (bio !== undefined) {
+      user.bio = bio.trim().slice(0, 300);
     }
 
-    if (lastName !== undefined) {
-      user.lastName = lastName.trim();
-    }
-
-    if (gender !== undefined) {
-      user.gender = gender;
-    }
-
-    if (phone !== undefined) {
-      user.phone = phone.trim();
-    }
-
-    if (schoolId !== undefined) {
-      user.schoolId = schoolId.trim();
+    if (profileImage !== undefined) {
+      user.profileImage = profileImage;
     }
 
     if (githubUrl !== undefined) {
@@ -924,22 +791,20 @@ const updateProfile = async (req, res) => {
       user.codeforcesUrl = codeforcesUrl.trim();
     }
 
-    if (bio !== undefined) {
-      user.bio = bio.trim();
-    }
-
-    if (profileImage !== undefined) {
-      user.profileImage = profileImage;
+    if (user.role !== "student") {
+      if (firstName !== undefined) user.firstName = firstName.trim();
+      if (lastName !== undefined) user.lastName = lastName.trim();
+      if (phone !== undefined) user.phone = phone.trim();
     }
 
     await user.save();
 
     const updatedUser = await User.findById(user._id)
       .select("-password")
-      .populate("assignedMentors")
-      .populate("assignedStudents")
-      .populate("batch")
-      .populate("batchHistory.batch");
+      .populate("assignedMentors", "firstName lastName email gender phone")
+      .populate("assignedStudents", "firstName lastName email gender phone atRisk")
+      .populate("batch", "name status startDate endDate")
+      .populate("batchHistory.batch", "name status startDate endDate");
 
     return res.status(200).json({
       success: true,
@@ -947,18 +812,12 @@ const updateProfile = async (req, res) => {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Update profile error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error updating profile",
     });
   }
 };
-
-// ============================================================
-// CHANGE USER BATCH / ROLE
-// ============================================================
 
 const changeUserBatch = async (req, res) => {
   try {
@@ -1021,7 +880,7 @@ const changeUserBatch = async (req, res) => {
     }
 
     const existingHistoryIndex = user.batchHistory.findIndex(
-      (item) => item.batch && item.batch.toString() === batch._id.toString(),
+      (item) => item.batch && item.batch.toString() === batch._id.toString()
     );
 
     if (existingHistoryIndex === -1) {
@@ -1041,9 +900,8 @@ const changeUserBatch = async (req, res) => {
           $pull: {
             assignedStudents: user._id,
           },
-        },
+        }
       );
-
       user.assignedMentors = [];
     }
 
@@ -1054,9 +912,8 @@ const changeUserBatch = async (req, res) => {
           $pull: {
             assignedMentors: user._id,
           },
-        },
+        }
       );
-
       user.assignedStudents = [];
     }
 
@@ -1067,7 +924,7 @@ const changeUserBatch = async (req, res) => {
       .populate("batch", "name status startDate endDate description")
       .populate(
         "batchHistory.batch",
-        "name status startDate endDate description",
+        "name status startDate endDate description"
       );
 
     return res.status(200).json({
@@ -1076,8 +933,6 @@ const changeUserBatch = async (req, res) => {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Change user batch error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Error changing user batch",
@@ -1085,29 +940,20 @@ const changeUserBatch = async (req, res) => {
   }
 };
 
-// ============================================================
-// EXPORTS
-// ============================================================
-
 module.exports = {
   createUser,
   updateUserStatus,
   assignMentor,
-
   getStudents,
   getMentors,
   getMyStudents,
-
   getMyRiskStatus,
   getStudentDashboard,
   updateStudentRiskStatus,
   getAtRiskStudents,
-
   deleteUser,
   getBlacklistedUsers,
-
   getProfile,
   updateProfile,
-
   changeUserBatch,
 };
