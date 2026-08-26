@@ -11,16 +11,39 @@ const VALID_TYPES = [
   "Sunday Meeting",
 ];
 
-const getStartOfDay = (d) => {
-  const date = new Date(d);
+// ============================================================
+// HELPERS
+// ============================================================
+
+const getStartOfDay = (value) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
   date.setHours(0, 0, 0, 0);
+
   return date;
 };
+
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+// ============================================================
+// CREATE SINGLE SESSION
+// ============================================================
 
 const createSession = async (req, res) => {
   try {
     const { batchId, week, type, date, name, order, teamId } = req.body;
+
     const adminId = req.user?._id;
+
+    // --------------------------------------------------------
+    // AUTHENTICATION
+    // --------------------------------------------------------
 
     if (!adminId) {
       return res.status(401).json({
@@ -29,6 +52,10 @@ const createSession = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // REQUIRED FIELDS
+    // --------------------------------------------------------
+
     if (!batchId || !week || !type || !date) {
       return res.status(400).json({
         success: false,
@@ -36,12 +63,20 @@ const createSession = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+    // --------------------------------------------------------
+    // VALIDATE BATCH ID
+    // --------------------------------------------------------
+
+    if (!isValidObjectId(batchId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID",
       });
     }
+
+    // --------------------------------------------------------
+    // VALIDATE TYPE
+    // --------------------------------------------------------
 
     if (!VALID_TYPES.includes(type)) {
       return res.status(400).json({
@@ -50,7 +85,12 @@ const createSession = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // VALIDATE WEEK
+    // --------------------------------------------------------
+
     const weekNumber = Number(week);
+
     if (!Number.isInteger(weekNumber) || weekNumber < 1) {
       return res.status(400).json({
         success: false,
@@ -58,7 +98,12 @@ const createSession = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // CHECK BATCH
+    // --------------------------------------------------------
+
     const batch = await Batch.findById(batchId);
+
     if (!batch) {
       return res.status(404).json({
         success: false,
@@ -66,7 +111,12 @@ const createSession = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // VALIDATE DATE
+    // --------------------------------------------------------
+
     const sessionDate = new Date(date);
+
     if (Number.isNaN(sessionDate.getTime())) {
       return res.status(400).json({
         success: false,
@@ -74,16 +124,34 @@ const createSession = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // NO PAST DATES
+    // --------------------------------------------------------
+
     const today = getStartOfDay(new Date());
-    if (getStartOfDay(sessionDate) < today) {
+    const selectedDate = getStartOfDay(sessionDate);
+
+    if (!selectedDate) {
       return res.status(400).json({
         success: false,
-        message: "Session date cannot be in the past. Must be today or a future date.",
+        message: "Invalid session date",
       });
     }
 
+    if (selectedDate < today) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Session date cannot be in the past. Must be today or a future date.",
+      });
+    }
+
+    // --------------------------------------------------------
+    // SESSION NAME / ORDER
+    // --------------------------------------------------------
+
     let sessionOrder = Number(order) || 1;
-    let sessionName = name && name.trim();
+    let sessionName = name?.trim() || "";
 
     if (type === "Lecture") {
       if (!sessionName) {
@@ -93,6 +161,7 @@ const createSession = async (req, res) => {
           type: "Lecture",
           isActive: true,
         });
+
         sessionOrder = existingLectures + 1;
         sessionName = `Lecture ${sessionOrder}`;
       }
@@ -101,15 +170,20 @@ const createSession = async (req, res) => {
       sessionOrder = sessionOrder || 1;
     }
 
+    // --------------------------------------------------------
+    // CREATE SESSION
+    // --------------------------------------------------------
+
     const session = await Session.create({
       batch: batchId,
-      team: teamId && mongoose.Types.ObjectId.isValid(teamId) ? teamId : null,
+      team: teamId && isValidObjectId(teamId) ? teamId : null,
       week: weekNumber,
       type,
       name: sessionName,
       order: sessionOrder,
       date: sessionDate,
       createdBy: adminId,
+      isActive: true,
     });
 
     return res.status(201).json({
@@ -118,6 +192,8 @@ const createSession = async (req, res) => {
       session,
     });
   } catch (error) {
+    console.error("Create session error:", error);
+
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -133,10 +209,33 @@ const createSession = async (req, res) => {
   }
 };
 
+// ============================================================
+// GENERATE WEEK SESSIONS
+// ============================================================
+//
+// FRONTEND FORMAT:
+//
+// dates: {
+//   lecture1: "2026-08-25",
+//   lecture2: "2026-08-27",
+//   lecture3: "2026-08-29",
+//   experienceSharing: "2026-08-30",
+//   contest: "2026-08-31"
+// }
+//
+// This backend supports any number of lectures.
+//
+// ============================================================
+
 const generateWeekSessions = async (req, res) => {
   try {
-    const { batchId, week, lectureCount, weekStartDate, dates } = req.body;
+    const { batchId, week, lectureCount, dates } = req.body;
+
     const adminId = req.user?._id;
+
+    // --------------------------------------------------------
+    // AUTHENTICATION
+    // --------------------------------------------------------
 
     if (!adminId) {
       return res.status(401).json({
@@ -145,6 +244,10 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // REQUIRED
+    // --------------------------------------------------------
+
     if (!batchId || !week) {
       return res.status(400).json({
         success: false,
@@ -152,15 +255,22 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+    // --------------------------------------------------------
+    // VALIDATE BATCH ID
+    // --------------------------------------------------------
+
+    if (!isValidObjectId(batchId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID",
       });
     }
 
+    // --------------------------------------------------------
+    // VALIDATE WEEK
+    // --------------------------------------------------------
+
     const weekNumber = Number(week);
-    const lectures = Math.min(Math.max(Number(lectureCount) || 2, 1), 5);
 
     if (!Number.isInteger(weekNumber) || weekNumber < 1) {
       return res.status(400).json({
@@ -169,7 +279,30 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------------
+    // LECTURE COUNT
+    // --------------------------------------------------------
+    //
+    // No artificial maximum.
+    //
+    // The frontend can generate:
+    // 1, 2, 3, 4, 5, 6, 7, ...
+    //
+    // --------------------------------------------------------
+
+    const requestedLectureCount = Number(lectureCount);
+
+    const lectures =
+      Number.isInteger(requestedLectureCount) && requestedLectureCount >= 1
+        ? requestedLectureCount
+        : 1;
+
+    // --------------------------------------------------------
+    // CHECK BATCH
+    // --------------------------------------------------------
+
     const batch = await Batch.findById(batchId);
+
     if (!batch) {
       return res.status(404).json({
         success: false,
@@ -177,113 +310,263 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    const baseDate = weekStartDate
-      ? new Date(weekStartDate)
-      : dates?.default
-      ? new Date(dates.default)
-      : new Date();
-
-    if (Number.isNaN(baseDate.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid start date",
-      });
-    }
+    // --------------------------------------------------------
+    // TODAY
+    // --------------------------------------------------------
 
     const today = getStartOfDay(new Date());
-    if (getStartOfDay(baseDate) < today) {
-      return res.status(400).json({
-        success: false,
-        message: "Week start date cannot be in the past. Must be today or a future date.",
+
+    // --------------------------------------------------------
+    // SESSIONS TO CREATE
+    // --------------------------------------------------------
+
+    const sessionsToCreate = [];
+
+    // ========================================================
+    // LECTURES
+    // ========================================================
+    //
+    // IMPORTANT FIX:
+    //
+    // The frontend sends:
+    //
+    // dates.lecture1
+    // dates.lecture2
+    // dates.lecture3
+    //
+    // NOT:
+    //
+    // dates.lectures[]
+    //
+    // ========================================================
+
+    for (let i = 0; i < lectures; i++) {
+      const lectureNumber = i + 1;
+
+      const rawDate = dates?.[`lecture${lectureNumber}`];
+
+      // ------------------------------------------------------
+      // EMPTY DATE
+      // ------------------------------------------------------
+      //
+      // If a lecture has no date, don't create it.
+      //
+      // ------------------------------------------------------
+
+      if (
+        rawDate === undefined ||
+        rawDate === null ||
+        String(rawDate).trim() === ""
+      ) {
+        continue;
+      }
+
+      // ------------------------------------------------------
+      // VALIDATE DATE
+      // ------------------------------------------------------
+
+      const lectureDate = new Date(rawDate);
+
+      if (Number.isNaN(lectureDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid date for Lecture ${lectureNumber}.`,
+        });
+      }
+
+      const lectureDay = getStartOfDay(lectureDate);
+
+      if (!lectureDay) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid date for Lecture ${lectureNumber}.`,
+        });
+      }
+
+      // ------------------------------------------------------
+      // NO PAST DATE
+      // ------------------------------------------------------
+
+      if (lectureDay < today) {
+        return res.status(400).json({
+          success: false,
+          message: `Lecture ${lectureNumber} date cannot be in the past.`,
+        });
+      }
+
+      // ------------------------------------------------------
+      // CREATE LECTURE OBJECT
+      // ------------------------------------------------------
+
+      sessionsToCreate.push({
+        batch: batchId,
+        team: null,
+        week: weekNumber,
+        type: "Lecture",
+        name: `Lecture ${lectureNumber}`,
+        order: lectureNumber,
+        date: lectureDate,
+        createdBy: adminId,
+        isActive: true,
       });
     }
 
-    const addDays = (d, days) => {
-      const result = new Date(d);
-      result.setDate(result.getDate() + days);
-      return result;
-    };
+    // ========================================================
+    // EXPERIENCE SHARING
+    // ========================================================
 
-    const providedDates = dates || {};
-    const sessionsToCreate = [];
-    const lectureDayOffsets = [0, 1, 2, 3, 4];
+    const experienceSharingDate = dates?.experienceSharing;
 
-    for (let i = 1; i <= lectures; i++) {
-      const specificDate = providedDates[`lecture${i}`];
-      const assignedDate = specificDate
-        ? new Date(specificDate)
-        : addDays(baseDate, lectureDayOffsets[i - 1] || i - 1);
+    if (
+      experienceSharingDate !== undefined &&
+      experienceSharingDate !== null &&
+      String(experienceSharingDate).trim() !== ""
+    ) {
+      const expDate = new Date(experienceSharingDate);
 
-      if (getStartOfDay(assignedDate) < today) {
+      if (Number.isNaN(expDate.getTime())) {
         return res.status(400).json({
           success: false,
-          message: `Lecture ${i} date cannot be in the past.`,
+          message: "Invalid Experience Sharing date.",
+        });
+      }
+
+      const expDay = getStartOfDay(expDate);
+
+      if (!expDay) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Experience Sharing date.",
+        });
+      }
+
+      if (expDay < today) {
+        return res.status(400).json({
+          success: false,
+          message: "Experience Sharing date cannot be in the past.",
         });
       }
 
       sessionsToCreate.push({
         batch: batchId,
+        team: null,
         week: weekNumber,
-        type: "Lecture",
-        name: `Lecture ${i}`,
-        order: i,
-        date: assignedDate,
+        type: "Experience Sharing",
+        name: "Experience Sharing",
+        order: lectures + 1,
+        date: expDate,
         createdBy: adminId,
+        isActive: true,
       });
     }
 
-    const expDate = providedDates.experienceSharing
-      ? new Date(providedDates.experienceSharing)
-      : addDays(baseDate, 3);
+    // ========================================================
+    // CONTEST
+    // ========================================================
 
-    if (getStartOfDay(expDate) < today) {
-      return res.status(400).json({
-        success: false,
-        message: "Experience Sharing date cannot be in the past.",
+    const contestDate = dates?.contest;
+
+    if (
+      contestDate !== undefined &&
+      contestDate !== null &&
+      String(contestDate).trim() !== ""
+    ) {
+      const contest = new Date(contestDate);
+
+      if (Number.isNaN(contest.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Contest date.",
+        });
+      }
+
+      const contestDay = getStartOfDay(contest);
+
+      if (!contestDay) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Contest date.",
+        });
+      }
+
+      if (contestDay < today) {
+        return res.status(400).json({
+          success: false,
+          message: "Contest date cannot be in the past.",
+        });
+      }
+
+      sessionsToCreate.push({
+        batch: batchId,
+        team: null,
+        week: weekNumber,
+        type: "Contest",
+        name: "Contest",
+        order: lectures + 2,
+        date: contest,
+        createdBy: adminId,
+        isActive: true,
       });
     }
 
-    sessionsToCreate.push({
+    // ========================================================
+    // REMOVE OLD SCHEDULE FOR THIS WEEK
+    // ========================================================
+    //
+    // This allows the admin to regenerate the week.
+    //
+    // ========================================================
+
+    await Session.deleteMany({
       batch: batchId,
       week: weekNumber,
-      type: "Experience Sharing",
-      name: "Experience Sharing",
-      order: 1,
-      date: expDate,
-      createdBy: adminId,
     });
 
-    const contestDate = providedDates.contest
-      ? new Date(providedDates.contest)
-      : addDays(baseDate, 5);
+    // ========================================================
+    // CREATE NEW SCHEDULE
+    // ========================================================
 
-    if (getStartOfDay(contestDate) < today) {
-      return res.status(400).json({
-        success: false,
-        message: "Contest date cannot be in the past.",
-      });
+    let created = [];
+
+    if (sessionsToCreate.length > 0) {
+      created = await Session.insertMany(sessionsToCreate);
     }
 
-    sessionsToCreate.push({
-      batch: batchId,
-      week: weekNumber,
-      type: "Contest",
-      name: "Contest",
-      order: 1,
-      date: contestDate,
-      createdBy: adminId,
-    });
-
-    await Session.deleteMany({ batch: batchId, week: weekNumber });
-
-    const created = await Session.insertMany(sessionsToCreate);
+    // ========================================================
+    // RESPONSE
+    // ========================================================
 
     return res.status(201).json({
       success: true,
-      message: `Week ${weekNumber} sessions generated successfully across future days.`,
+
+      message:
+        created.length > 0
+          ? `Week ${weekNumber} schedule generated successfully.`
+          : `Week ${weekNumber} has no scheduled sessions.`,
+
       sessions: created,
+
+      lectureCount: lectures,
+
+      lecturesCreated: created.filter((session) => session.type === "Lecture")
+        .length,
+
+      experienceSharingCreated: created.some(
+        (session) => session.type === "Experience Sharing",
+      ),
+
+      contestCreated: created.some((session) => session.type === "Contest"),
     });
   } catch (error) {
+    console.error("Generate week sessions error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Duplicate session detected for this batch/week.",
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Server error while generating week sessions",
@@ -292,12 +575,16 @@ const generateWeekSessions = async (req, res) => {
   }
 };
 
+// ============================================================
+// LIST SESSIONS FOR BATCH
+// ============================================================
+
 const listSessionsForBatch = async (req, res) => {
   try {
     const { batchId } = req.params;
     const { week } = req.query;
 
-    if (!mongoose.Types.ObjectId.isValid(batchId)) {
+    if (!isValidObjectId(batchId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID",
@@ -309,8 +596,17 @@ const listSessionsForBatch = async (req, res) => {
       isActive: true,
     };
 
-    if (week) {
-      query.week = Number(week);
+    if (week !== undefined && week !== "") {
+      const weekNumber = Number(week);
+
+      if (!Number.isInteger(weekNumber) || weekNumber < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid week number",
+        });
+      }
+
+      query.week = weekNumber;
     }
 
     const sessions = await Session.find(query).sort({
@@ -324,6 +620,8 @@ const listSessionsForBatch = async (req, res) => {
       sessions,
     });
   } catch (error) {
+    console.error("List batch sessions error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while listing sessions",
@@ -332,9 +630,15 @@ const listSessionsForBatch = async (req, res) => {
   }
 };
 
+// ============================================================
+// LIST SESSIONS FOR MENTOR
+// ============================================================
+
 const listSessionsForMentor = async (req, res) => {
   try {
-    const team = await Team.findOne({ mentors: req.user._id });
+    const team = await Team.findOne({
+      mentors: req.user._id,
+    });
 
     if (!team || !team.batch) {
       return res.status(200).json({
@@ -351,8 +655,17 @@ const listSessionsForMentor = async (req, res) => {
       isActive: true,
     };
 
-    if (week) {
-      query.week = Number(week);
+    if (week !== undefined && week !== "") {
+      const weekNumber = Number(week);
+
+      if (!Number.isInteger(weekNumber) || weekNumber < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid week number",
+        });
+      }
+
+      query.week = weekNumber;
     }
 
     const sessions = await Session.find(query).sort({
@@ -367,6 +680,8 @@ const listSessionsForMentor = async (req, res) => {
       batchId: team.batch,
     });
   } catch (error) {
+    console.error("List mentor sessions error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while listing sessions",
@@ -375,11 +690,15 @@ const listSessionsForMentor = async (req, res) => {
   }
 };
 
+// ============================================================
+// DELETE SESSION
+// ============================================================
+
 const deleteSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    if (!isValidObjectId(sessionId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid session ID",
@@ -388,8 +707,12 @@ const deleteSession = async (req, res) => {
 
     const session = await Session.findByIdAndUpdate(
       sessionId,
-      { isActive: false },
-      { new: true }
+      {
+        isActive: false,
+      },
+      {
+        new: true,
+      },
     );
 
     if (!session) {
@@ -404,6 +727,8 @@ const deleteSession = async (req, res) => {
       message: "Session removed",
     });
   } catch (error) {
+    console.error("Delete session error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while deleting session",
@@ -411,6 +736,10 @@ const deleteSession = async (req, res) => {
     });
   }
 };
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   createSession,

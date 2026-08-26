@@ -83,6 +83,23 @@ const validateObjectId = (id, name) => {
 };
 
 // ======================================================
+// COMPLETION
+// ======================================================
+
+const isCompleted = (progress) => {
+  if (!progress) return false;
+
+  const status = normalizeStatus(progress.status);
+
+  return Boolean(
+    status === "done" ||
+    progress.completedAt ||
+    progress.watched ||
+    progress.submissionLink,
+  );
+};
+
+// ======================================================
 // STUDENT BATCH IDS
 // ======================================================
 
@@ -126,23 +143,6 @@ const getSelectedStudentBatch = async (studentId, batchId) => {
   }
 
   return selectedBatch;
-};
-
-// ======================================================
-// COMPLETION
-// ======================================================
-
-const isCompleted = (progress) => {
-  if (!progress) return false;
-
-  const status = normalizeStatus(progress.status);
-
-  return Boolean(
-    status === "done" ||
-    progress.completedAt ||
-    progress.watched ||
-    progress.submissionLink,
-  );
 };
 
 // ======================================================
@@ -535,12 +535,14 @@ const getStudentSummary = async (studentId, type, week, batchId, topic) => {
 
   const total = progressList.length;
 
+  const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
+
   return {
     total,
     completed,
     needsHelp,
     inProgress,
-    completion: total ? Math.round((completed / total) * 100) : 0,
+    completion,
   };
 };
 
@@ -645,7 +647,7 @@ const getProgressDashboard = async (studentId, batchId) => {
 const getStudentDashboard = getProgressDashboard;
 
 // ======================================================
-// GET MENTOR TEAMS
+// MENTOR TEAMS
 // ======================================================
 
 const getMentorTeams = async (mentorId, batchId) => {
@@ -661,7 +663,7 @@ const getMentorTeams = async (mentorId, batchId) => {
 };
 
 // ======================================================
-// GET MENTOR STUDENTS
+// MENTOR STUDENTS
 // ======================================================
 
 const getMentorStudents = async (mentorId, batchId) => {
@@ -688,6 +690,7 @@ const getMentorStudents = async (mentorId, batchId) => {
       $in: studentIds,
     },
     role: "student",
+
     ...(batchId
       ? {
           batch: batchId,
@@ -714,10 +717,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
 
   let selectedBatch = batchId || mentor.batch;
 
-  /*
-   * If the mentor has no batch directly on the User
-   * document, get the batch from the mentor's team.
-   */
   if (!selectedBatch) {
     const team = await Team.findOne({
       mentors: mentorId,
@@ -734,15 +733,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
 
   validateObjectId(selectedBatch, "batch ID");
 
-  /*
-   * IMPORTANT:
-   *
-   * We get students from Team.students,
-   * not only User.assignedStudents.
-   *
-   * This guarantees the mentor can only see
-   * students belonging to their own team.
-   */
   const students = await getMentorStudents(mentorId, selectedBatch);
 
   if (!students.length) {
@@ -784,41 +774,44 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
       topic,
     );
 
-    /*
-     * Collect actual progress statuses.
-     */
-    const statusCounts = {
-      completed: 0,
-      inProgress: 0,
-      needsHelp: 0,
-      notStarted: 0,
-    };
+    // ====================================================
+    // CALCULATE ACTUAL STATUS COUNTS
+    // ====================================================
+
+    let completed = 0;
+    let inProgress = 0;
+    let needsHelp = 0;
+    let notStarted = 0;
 
     for (const item of items) {
       const status = normalizeStatus(item.progress?.status);
 
       if (status === "done" || isCompleted(item.progress)) {
-        statusCounts.completed++;
+        completed++;
       } else if (status === "in_progress") {
-        statusCounts.inProgress++;
+        inProgress++;
       } else if (status === "needs_help") {
-        statusCounts.needsHelp++;
+        needsHelp++;
       } else {
-        statusCounts.notStarted++;
+        notStarted++;
       }
     }
 
-    /*
-     * Use the real StudentProgress values.
-     *
-     * This is especially important for:
-     *
-     * Completed
-     * In Progress
-     * Needs Help
-     */
-    const atRisk =
-      overall.completion < 50 || cp.needsHelp > 0 || dev.needsHelp > 0;
+    // ====================================================
+    // ACTUAL TOTAL
+    // ====================================================
+
+    const total = items.length;
+
+    // ====================================================
+    // ACTUAL COMPLETION
+    // ====================================================
+
+    const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    // ====================================================
+    // NOTES
+    // ====================================================
 
     const notes = items
       .filter((item) => item.progress?.mentorNote || item.progress?.note)
@@ -842,73 +835,105 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
         updatedAt: item.progress?.updatedAt || null,
       }));
 
+    const atRisk = completion < 50 || needsHelp > 0;
+
     result.push({
+      // ==================================================
+      // STUDENT
+      // ==================================================
+
       student: {
         id: student._id,
+        _id: student._id,
         name: `${student.firstName} ${student.lastName}`,
+        firstName: student.firstName,
+        lastName: student.lastName,
         email: student.email,
         gender: student.gender,
         batch: student.batch,
       },
 
-      /*
-       * Existing dashboard fields.
-       */
+      // ==================================================
+      // CP
+      // ==================================================
+
       cp,
+
+      // ==================================================
+      // DEV
+      // ==================================================
+
       dev,
+
+      // ==================================================
+      // OVERALL
+      // ==================================================
+
       overall,
 
-      /*
-       * Detailed actual status counts.
-       */
-      completed: statusCounts.completed,
+      // ==================================================
+      // IMPORTANT TOP-LEVEL VALUES
+      // FRONTEND USES THESE
+      // ==================================================
 
-      inProgress: statusCounts.inProgress,
+      total,
 
-      needsHelp: statusCounts.needsHelp,
+      completed,
 
-      notStarted: statusCounts.notStarted,
+      inProgress,
 
-      /*
-       * Also expose a progress object
-       * so the frontend can use:
-       *
-       * student.progress.completed
-       * student.progress.inProgress
-       * student.progress.needsHelp
-       */
+      needsHelp,
+
+      notStarted,
+
+      completion,
+
+      // ==================================================
+      // PROGRESS OBJECT
+      // ==================================================
+
       progress: {
-        total: items.length,
+        total,
 
-        completed: statusCounts.completed,
+        completed,
 
-        inProgress: statusCounts.inProgress,
+        inProgress,
 
-        needsHelp: statusCounts.needsHelp,
+        needsHelp,
 
-        notStarted: statusCounts.notStarted,
+        notStarted,
 
-        completion: items.length
-          ? Math.round((statusCounts.completed / items.length) * 100)
-          : 0,
+        completion,
       },
+
+      // ==================================================
+      // ITEMS
+      // ==================================================
 
       items,
 
+      // ==================================================
+      // NOTES
+      // ==================================================
+
       notes,
+
+      // ==================================================
+      // RISK
+      // ==================================================
 
       atRisk,
 
       riskReason:
-        overall.completion < 50
+        completion < 50
           ? "Progress is below 50%"
-          : cp.needsHelp > 0 || dev.needsHelp > 0
+          : needsHelp > 0
             ? "Student needs help"
             : null,
     });
   }
 
-  return result.sort((a, b) => b.overall.completion - a.overall.completion);
+  return result.sort((a, b) => b.completion - a.completion);
 };
 
 // ======================================================
@@ -935,7 +960,7 @@ const getFallingBehindStudents = async (
 
   return students.filter(
     (student) =>
-      student.overall.completion < minimum ||
+      student.completion < minimum ||
       student.needsHelp > 0 ||
       student.cp.needsHelp > 0 ||
       student.dev.needsHelp > 0,
