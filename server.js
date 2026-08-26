@@ -15,7 +15,7 @@ const connectDB = require("./config/db");
 // ============================================================
 // ROUTES
 // ============================================================
-
+const Document = require("./models/document.model");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const batchRoutes = require("./routes/batchRoutes");
@@ -31,9 +31,12 @@ const assignmentRoutes = require("./routes/assignmentRoutes");
 const projectTrackingRoutes = require("./routes/projectTrackingRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
 const atRiskRoutes = require("./routes/atRiskRoutes");
-
+const documentRoutes = require("./routes/document.routes");
 const mentorAssignmentSubmissionRoutes = require("./routes/mentorAssignmentSubmissionRoutes");
-
+const extractionRoutes = require("./routes/extraction.routes");
+const retrievalRoutes = require("./routes/retrieval.routes");
+const ragRoutes = require("./routes/rag.routes");
+const chatRoutes = require("./routes/chat.routes");
 // ============================================================
 // APP
 // ============================================================
@@ -108,9 +111,32 @@ app.use("/api/assignments", assignmentRoutes);
 app.use("/api/project-tracking", projectTrackingRoutes);
 
 app.use("/api/submissions", submissionRoutes);
-
+app.use("/api/retrieval", retrievalRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api/documents", documentRoutes);
+app.use("/api/extraction", extractionRoutes);
+app.use("/api/rag", ragRoutes);
+app.use("/api/chats", chatRoutes);
+app.post("/test/document", async (req, res) => {
+  try {
+    const document = await Document.create({
+      title: "Test Bootcamp Document",
+      type: "text",
+      source: "manual",
+      status: "processed",
+    });
 
+    res.status(201).json({
+      success: true,
+      document,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 // ============================================================
 // SESSION ROUTES
 // ============================================================

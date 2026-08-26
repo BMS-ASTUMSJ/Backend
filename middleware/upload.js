@@ -3,10 +3,10 @@ const path = require("path");
 const fs = require("fs");
 
 // ======================================================
-// UPLOAD DIRECTORY
+// RAG UPLOAD DIRECTORY
 // ======================================================
 
-const uploadDirectory = path.join(__dirname, "..", "uploads", "assignments");
+const uploadDirectory = path.join(__dirname, "..", "uploads", "rag");
 
 if (!fs.existsSync(uploadDirectory)) {
   fs.mkdirSync(uploadDirectory, {
@@ -18,18 +18,7 @@ if (!fs.existsSync(uploadDirectory)) {
 // ALLOWED EXTENSIONS
 // ======================================================
 
-const allowedExtensions = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".ppt",
-  ".pptx",
-  ".xls",
-  ".xlsx",
-  ".txt",
-  ".zip",
-  ".rar",
-];
+const allowedExtensions = [".pdf", ".docx", ".txt"];
 
 // ======================================================
 // STORAGE
@@ -41,9 +30,11 @@ const storage = multer.diskStorage({
   },
 
   filename: (req, file, cb) => {
-    const extension = path.extname(file.originalname);
+    const extension = path.extname(file.originalname).toLowerCase();
 
-    const uniqueFileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+    const uniqueFileName = `${Date.now()}-${Math.round(
+      Math.random() * 1e9,
+    )}${extension}`;
 
     cb(null, uniqueFileName);
   },
@@ -59,7 +50,7 @@ const fileFilter = (req, file, cb) => {
   if (!allowedExtensions.includes(extension)) {
     return cb(
       new Error(
-        "Unsupported file type. Allowed files: PDF, Word, PowerPoint, Excel, TXT, ZIP and RAR.",
+        "Unsupported file type. Only PDF, DOCX, and TXT files are allowed.",
       ),
     );
   }
@@ -72,13 +63,16 @@ const fileFilter = (req, file, cb) => {
 // ======================================================
 
 const upload = multer({
-  storage: storage,
-
-  fileFilter: fileFilter,
+  storage,
+  fileFilter,
 
   limits: {
     fileSize: 20 * 1024 * 1024,
   },
 });
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = upload;
