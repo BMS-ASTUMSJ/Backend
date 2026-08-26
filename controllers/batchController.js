@@ -3,10 +3,23 @@ const Batch = require("../models/batch");
 const User = require("../models/user");
 const Team = require("../models/team");
 const Applicant = require("../models/applicant");
+const Attendance = require("../models/attendance");
+const Assignment = require("../models/assignment");
+
+let Submission = null;
+try {
+  Submission = mongoose.model("Submission");
+} catch {
+  try {
+    Submission = require("../models/submission");
+  } catch (e) {
+    Submission = null;
+  }
+}
 
 const createBatch = async (req, res) => {
   try {
-    const { name, startDate, endDate, status = "upcoming" } = req.body;
+    const { name, startDate, endDate, status = "upcoming", description = "" } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -48,7 +61,7 @@ const createBatch = async (req, res) => {
             status: "completed",
             isRegistrationOpen: false,
           },
-        },
+        }
       );
     }
 
@@ -56,6 +69,7 @@ const createBatch = async (req, res) => {
       name: name.trim(),
       startDate,
       endDate: endDate || null,
+      description: description.trim(),
       status,
     });
 
@@ -99,7 +113,7 @@ const getBatches = async (req, res) => {
 const getMyBatches = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select(
-      "role batch batchHistory",
+      "role batch batchHistory"
     );
 
     if (!user) {
@@ -124,7 +138,6 @@ const getMyBatches = async (req, res) => {
     }
 
     const history = user.batchHistory || [];
-
     const batchIds = history.map((item) => item.batch).filter(Boolean);
 
     if (
@@ -142,7 +155,7 @@ const getMyBatches = async (req, res) => {
 
     const result = batches.map((batch) => {
       const membership = history.find(
-        (item) => item.batch && item.batch.toString() === batch._id.toString(),
+        (item) => item.batch && item.batch.toString() === batch._id.toString()
       );
 
       let role = membership?.role || null;
@@ -186,7 +199,7 @@ const getMyBatch = async (req, res) => {
     }
 
     const user = await User.findById(req.user._id).select(
-      "role batch batchHistory",
+      "role batch batchHistory"
     );
 
     if (!user) {
@@ -214,7 +227,7 @@ const getMyBatch = async (req, res) => {
     }
 
     const membership = user.batchHistory?.find(
-      (item) => item.batch && item.batch.toString() === id,
+      (item) => item.batch && item.batch.toString() === id
     );
 
     if (membership) {
@@ -310,12 +323,11 @@ const toggleBatchRegistration = async (req, res) => {
           $set: {
             isRegistrationOpen: false,
           },
-        },
+        }
       );
     }
 
     batch.isRegistrationOpen = newRegistrationStatus;
-
     await batch.save();
 
     const batches = await Batch.find().sort({
@@ -380,7 +392,7 @@ const updateBatchStatus = async (req, res) => {
             status: "completed",
             isRegistrationOpen: false,
           },
-        },
+        }
       );
     }
 
@@ -389,7 +401,6 @@ const updateBatchStatus = async (req, res) => {
     }
 
     batch.status = status;
-
     await batch.save();
 
     const batches = await Batch.find().sort({
@@ -438,16 +449,13 @@ const getBatchDashboardStats = async (req, res) => {
           role: "student",
           batch: activeBatch._id,
         }),
-
         User.find({
           role: "mentor",
           batch: activeBatch._id,
         }),
-
         Team.find({
           batch: activeBatch._id,
         }),
-
         Applicant.find({
           batch: activeBatch._id,
         }),
@@ -456,14 +464,11 @@ const getBatchDashboardStats = async (req, res) => {
       currentBatchStats = {
         batch: activeBatch,
         studentCount: students.length,
-
         femaleStudents: students.filter(
-          (student) => student.gender === "Female",
+          (student) => student.gender === "Female"
         ).length,
-
         maleStudents: students.filter((student) => student.gender === "Male")
           .length,
-
         mentorCount: mentors.length,
         teamCount: teams.length,
         applicantCount: applicants.length,
@@ -501,19 +506,15 @@ const getBatchDashboardStats = async (req, res) => {
           startDate: batch.startDate,
           endDate: batch.endDate,
           description: batch.description,
-
           totalStudents: students.length,
-
           femaleStudents: students.filter(
-            (student) => student.gender === "Female",
+            (student) => student.gender === "Female"
           ).length,
-
           maleStudents: students.filter((student) => student.gender === "Male")
             .length,
-
           totalTeams: teams.length,
         };
-      }),
+      })
     );
 
     const [totalStudentsAllTime, totalMentors, totalApplicants] =
@@ -521,27 +522,110 @@ const getBatchDashboardStats = async (req, res) => {
         User.countDocuments({
           role: "student",
         }),
-
         User.countDocuments({
           role: "mentor",
         }),
-
         Applicant.countDocuments(),
       ]);
 
     const previousBatches = batchHistory.filter(
-      (batch) => batch._id.toString() !== activeBatch?._id?.toString(),
+      (batch) => batch._id.toString() !== activeBatch?._id?.toString()
     );
+
+    let attendanceStats = {
+      present: 0,
+      absent: 0,
+      late: 0,
+    };
+
+    try {
+      const attendanceQuery = activeBatch ? { batchId: activeBatch._id } : {};
+      const attendances = await Attendance.find(attendanceQuery).select(
+        "firstCheck secondCheck"
+      );
+
+      attendances.forEach((rec) => {
+        if (rec.firstCheck?.status === "Present") attendanceStats.present++;
+        if (rec.firstCheck?.status === "Absent") attendanceStats.absent++;
+        if (rec.firstCheck?.status === "Late") attendanceStats.late++;
+
+        if (rec.secondCheck?.status === "Present") attendanceStats.present++;
+        if (rec.secondCheck?.status === "Absent") attendanceStats.absent++;
+        if (rec.secondCheck?.status === "Late") attendanceStats.late++;
+      });
+    } catch (attErr) {
+      console.error("Attendance stats computation error:", attErr);
+    }
+
+    let assignmentStats = {
+      completed: 0,
+      pending: 0,
+      overdue: 0,
+    };
+
+    try {
+      const assignmentQuery = activeBatch ? { batch: activeBatch._id } : {};
+      const batchAssignments = await Assignment.find(assignmentQuery).select("_id deadline");
+
+      if (Submission) {
+        const assignmentIds = batchAssignments.map((a) => a._id);
+        const subQuery = assignmentIds.length > 0 ? { assignment: { $in: assignmentIds } } : {};
+        const submissions = await Submission.find(subQuery).select("status assignment");
+
+        assignmentStats.completed = submissions.filter(
+          (s) => s.status === "Graded"
+        ).length;
+        assignmentStats.pending = submissions.filter(
+          (s) => s.status === "Pending"
+        ).length;
+        assignmentStats.overdue = submissions.filter(
+          (s) => s.status === "Resubmission Required"
+        ).length;
+      }
+    } catch (asgErr) {
+      console.error("Assignment stats computation error:", asgErr);
+    }
+
+    let recentActivity = [];
+    try {
+      const [recentApplicants, recentUsers] = await Promise.all([
+        Applicant.find()
+          .sort({ createdAt: -1 })
+          .limit(3)
+          .select("fullName email createdAt"),
+        User.find()
+          .sort({ createdAt: -1 })
+          .limit(3)
+          .select("firstName lastName role createdAt"),
+      ]);
+
+      const applicantActivities = recentApplicants.map((app) => ({
+        _id: app._id,
+        message: `New applicant registered: ${app.fullName}`,
+        createdAt: app.createdAt,
+      }));
+
+      const userActivities = recentUsers.map((u) => ({
+        _id: u._id,
+        message: `${u.role.toUpperCase()} registered: ${u.firstName} ${u.lastName}`,
+        createdAt: u.createdAt,
+      }));
+
+      recentActivity = [...applicantActivities, ...userActivities]
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 6);
+    } catch (actErr) {
+      console.error("Recent activity computation error:", actErr);
+    }
 
     return res.status(200).json({
       success: true,
-
       currentBatch: currentBatchStats,
-
       previousBatches,
-
       allBatches: batchHistory,
-
+      attendanceStats,
+      assignmentStats,
+      recentActivity,
       overallStats: {
         totalBatches: allBatches.length,
         totalStudentsAllTime,
@@ -563,15 +647,12 @@ const getBatchDashboardStats = async (req, res) => {
 const getBatchStats = async (req, res) => {
   try {
     const totalBatches = await Batch.countDocuments();
-
     const upcomingBatches = await Batch.countDocuments({
       status: "upcoming",
     });
-
     const activeBatches = await Batch.countDocuments({
       status: "active",
     });
-
     const completedBatches = await Batch.countDocuments({
       status: "completed",
     });
@@ -633,7 +714,7 @@ const getBatchById = async (req, res) => {
       ],
     })
       .select(
-        "firstName lastName email role gender phone schoolId bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
+        "firstName lastName email role gender phone schoolId bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory"
       )
       .populate("batch", "name startDate endDate status");
 
@@ -654,7 +735,7 @@ const getBatchById = async (req, res) => {
       ],
     })
       .select(
-        "firstName lastName email role gender phone bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory",
+        "firstName lastName email role gender phone bio profileImage githubUrl leetcodeUrl codeforcesUrl batch batchHistory"
       )
       .populate("batch", "name startDate endDate status");
 
@@ -668,14 +749,11 @@ const getBatchById = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-
       batch,
-
       students,
       mentors,
       teams,
       applicants,
-
       studentCount: students.length,
       mentorCount: mentors.length,
       teamCount: teams.length,
@@ -751,7 +829,7 @@ const updateBatch = async (req, res) => {
               status: "completed",
               isRegistrationOpen: false,
             },
-          },
+          }
         );
       }
 

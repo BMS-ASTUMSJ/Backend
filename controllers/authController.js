@@ -121,6 +121,7 @@ const login = async (req, res) => {
       });
     }
 
+    // Existing passwords are NOT affected by the new password rules.
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
@@ -246,6 +247,24 @@ const getMe = async (req, res) => {
   }
 };
 
+/*
+|--------------------------------------------------------------------------
+| CHANGE PASSWORD
+|--------------------------------------------------------------------------
+| Password requirements apply ONLY here.
+|
+| Requirements:
+| - At least 8 characters
+| - At least 1 uppercase letter
+| - At least 1 lowercase letter
+| - At least 1 number
+| - At least 1 special character
+|
+| Existing passwords are NOT checked against these requirements during
+| login, so old passwords continue to work.
+|--------------------------------------------------------------------------
+*/
+
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -257,10 +276,43 @@ const changePassword = async (req, res) => {
       });
     }
 
+    // Minimum 8 characters
     if (typeof newPassword !== "string" || newPassword.length < 8) {
       return res.status(400).json({
         success: false,
-        message: "New password must be at least 8 characters",
+        message: "Password must be at least 8 characters long",
+      });
+    }
+
+    // At least one uppercase letter
+    if (!/[A-Z]/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain at least one uppercase letter",
+      });
+    }
+
+    // At least one lowercase letter
+    if (!/[a-z]/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain at least one lowercase letter",
+      });
+    }
+
+    // At least one number
+    if (!/[0-9]/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain at least one number",
+      });
+    }
+
+    // At least one special character
+    if (!/[^A-Za-z0-9]/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain at least one special character",
       });
     }
 
@@ -294,6 +346,7 @@ const changePassword = async (req, res) => {
       });
     }
 
+    // Check current password.
     const passwordMatch = await bcrypt.compare(currentPassword, user.password);
 
     if (!passwordMatch) {
@@ -303,6 +356,7 @@ const changePassword = async (req, res) => {
       });
     }
 
+    // Prevent using the same password.
     const samePassword = await bcrypt.compare(newPassword, user.password);
 
     if (samePassword) {
@@ -312,7 +366,10 @@ const changePassword = async (req, res) => {
       });
     }
 
+    // Hash the new password.
     user.password = await bcrypt.hash(newPassword, 12);
+
+    // User has successfully changed the temporary password.
     user.mustChangePassword = false;
 
     await user.save();
@@ -563,6 +620,7 @@ const resetPassword = async (req, res) => {
       });
     }
 
+    // Original reset-password logic remains unchanged.
     if (typeof newPassword !== "string" || newPassword.length < 8) {
       return res.status(400).json({
         success: false,
