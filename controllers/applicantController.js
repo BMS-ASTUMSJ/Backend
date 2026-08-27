@@ -14,10 +14,6 @@ try {
   sendEmail = null;
 }
 
-/* ================================
-   REGISTER APPLICANT
-================================ */
-
 const registerApplicant = async (req, res) => {
   try {
     const {
@@ -37,7 +33,6 @@ const registerApplicant = async (req, res) => {
       batchId,
     } = req.body;
 
-    // Validate required fields
     if (
       !fullName ||
       !email ||
@@ -59,7 +54,6 @@ const registerApplicant = async (req, res) => {
       });
     }
 
-    // Check agreement
     if (!agreedToRules) {
       return res.status(400).json({
         success: false,
@@ -69,11 +63,9 @@ const registerApplicant = async (req, res) => {
 
     let targetBatch;
 
-    // Find selected batch
     if (batchId) {
       targetBatch = await Batch.findById(batchId);
     } else {
-      // Find an open registration batch
       targetBatch = await Batch.findOne({
         isRegistrationOpen: true,
       });
@@ -96,7 +88,6 @@ const registerApplicant = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check existing applicant
     const existingApplicant = await Applicant.findOne({
       email: normalizedEmail,
     });
@@ -108,7 +99,6 @@ const registerApplicant = async (req, res) => {
       });
     }
 
-    // Create applicant
     const applicant = await Applicant.create({
       fullName: fullName.trim(),
       email: normalizedEmail,
@@ -142,10 +132,6 @@ const registerApplicant = async (req, res) => {
     });
   }
 };
-
-/* ================================
-   GET APPLICANTS
-================================ */
 
 const getApplicants = async (req, res) => {
   try {
@@ -185,16 +171,11 @@ const getApplicants = async (req, res) => {
   }
 };
 
-/* ================================
-   UPDATE APPLICANT STATUS
-================================ */
-
 const updateApplicantStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    // Validate status
     if (!["passed", "rejected"].includes(status)) {
       return res.status(400).json({
         success: false,
@@ -202,7 +183,6 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    // Find applicant
     const applicant = await Applicant.findById(id);
 
     if (!applicant) {
@@ -212,15 +192,7 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    /* ================================
-       REJECT APPLICANT
-    ================================ */
-
     if (status === "rejected") {
-      // IMPORTANT:
-      // Don't use applicant.save() here.
-      // Old applicants may not have newly required fields.
-
       const updatedApplicant = await Applicant.findByIdAndUpdate(
         id,
         {
@@ -241,24 +213,13 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    /* ================================
-       ACCEPT / PASS APPLICANT
-    ================================ */
-
     const normalizedEmail = applicant.email.toLowerCase().trim();
 
-    // Check whether user already exists
     let user = await User.findOne({
       email: normalizedEmail,
     });
 
-    /* ================================
-       USER ALREADY EXISTS
-    ================================ */
-
     if (user) {
-      // Update only applicant status.
-      // This avoids validating missing fields in old applicant documents.
       const updatedApplicant = await Applicant.findByIdAndUpdate(
         id,
         {
@@ -294,10 +255,6 @@ const updateApplicantStatus = async (req, res) => {
       });
     }
 
-    /* ================================
-       CREATE NEW STUDENT ACCOUNT
-    ================================ */
-
     const nameParts = (applicant.fullName || "Student User")
       .trim()
       .split(/\s+/);
@@ -307,12 +264,10 @@ const updateApplicantStatus = async (req, res) => {
     const lastName =
       nameParts.length > 1 ? nameParts.slice(1).join(" ") : "User";
 
-    // Generate temporary password
     const temporaryPassword = crypto.randomBytes(4).toString("hex") + "Aa1!";
 
     const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
-    // Create student account
     user = await User.create({
       firstName,
       lastName,
@@ -330,9 +285,6 @@ const updateApplicantStatus = async (req, res) => {
       mustChangePassword: true,
     });
 
-    // IMPORTANT:
-    // Update ONLY the applicant status.
-    // Do not use applicant.save().
     const updatedApplicant = await Applicant.findByIdAndUpdate(
       id,
       {
@@ -345,10 +297,6 @@ const updateApplicantStatus = async (req, res) => {
         runValidators: false,
       },
     );
-
-    /* ================================
-       SEND EMAIL
-    ================================ */
 
     let emailSent = false;
 

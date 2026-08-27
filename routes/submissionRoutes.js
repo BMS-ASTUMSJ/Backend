@@ -22,7 +22,7 @@ router.get("/my", protect, authorize("student"), getMySubmissions);
 router.get(
   "/assignment/:assignmentId",
   protect,
-  authorize("mentor", "admin"),
+  authorize("mentor"),
   getSubmissionsByAssignment,
 );
 

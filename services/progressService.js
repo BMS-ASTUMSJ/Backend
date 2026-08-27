@@ -6,10 +6,6 @@ const User = require("../models/user");
 const Batch = require("../models/batch");
 const Team = require("../models/team");
 
-// ======================================================
-// CONSTANTS
-// ======================================================
-
 const TOPICS = [
   "HTML / CSS",
   "JavaScript",
@@ -21,10 +17,6 @@ const TOPICS = [
 ];
 
 const STATUSES = ["not_started", "in_progress", "done", "needs_help"];
-
-// ======================================================
-// STATUS NORMALIZER
-// ======================================================
 
 const normalizeStatus = (status) => {
   if (!status) return null;
@@ -70,10 +62,6 @@ const displayStatus = (status) => {
   return statusMap[normalized] || status || "Not Started";
 };
 
-// ======================================================
-// OBJECT ID
-// ======================================================
-
 const validateObjectId = (id, name) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) {
     throw new Error(`Invalid ${name}`);
@@ -81,11 +69,6 @@ const validateObjectId = (id, name) => {
 
   return new mongoose.Types.ObjectId(id);
 };
-
-// ======================================================
-// STUDENT BATCH IDS
-// ======================================================
-
 const getStudentBatchIds = async (studentId) => {
   const student = await User.findById(studentId).select("batch batchHistory");
 
@@ -108,10 +91,6 @@ const getStudentBatchIds = async (studentId) => {
   return batchIds;
 };
 
-// ======================================================
-// SELECTED STUDENT BATCH
-// ======================================================
-
 const getSelectedStudentBatch = async (studentId, batchId) => {
   const batches = await getStudentBatchIds(studentId);
 
@@ -128,10 +107,6 @@ const getSelectedStudentBatch = async (studentId, batchId) => {
   return selectedBatch;
 };
 
-// ======================================================
-// COMPLETION
-// ======================================================
-
 const isCompleted = (progress) => {
   if (!progress) return false;
 
@@ -144,10 +119,6 @@ const isCompleted = (progress) => {
     progress.submissionLink,
   );
 };
-
-// ======================================================
-// CREATE CONTENT
-// ======================================================
 
 const createProgressContent = async (data) => {
   const { batch, batchId, type, topic, week, title, link, publishedBy } = data;
@@ -200,10 +171,6 @@ const createProgressContent = async (data) => {
   });
 };
 
-// ======================================================
-// GET CONTENT
-// ======================================================
-
 const getProgressContent = async (type, week, batchId, topic) => {
   const filter = {
     isPublished: true,
@@ -235,10 +202,6 @@ const getProgressContent = async (type, week, batchId, topic) => {
     });
 };
 
-// ======================================================
-// GET CONTENT BY ID
-// ======================================================
-
 const getContentById = async (contentId) => {
   validateObjectId(contentId, "content ID");
 
@@ -252,10 +215,6 @@ const getContentById = async (contentId) => {
 
   return content;
 };
-
-// ======================================================
-// GET STUDENT PROGRESS
-// ======================================================
 
 const getStudentProgress = async (studentId, type, week, batchId, topic) => {
   const selectedBatch = await getSelectedStudentBatch(studentId, batchId);
@@ -340,10 +299,6 @@ const getStudentProgress = async (studentId, type, week, batchId, topic) => {
     };
   });
 };
-
-// ======================================================
-// UPDATE STUDENT PROGRESS
-// ======================================================
 
 const updateStudentProgress = async (studentId, contentId, data) => {
   validateObjectId(studentId, "student ID");
@@ -500,10 +455,6 @@ const updateStudentProgress = async (studentId, contentId, data) => {
 
 const updateStudentOwnProgress = updateStudentProgress;
 
-// ======================================================
-// STUDENT SUMMARY
-// ======================================================
-
 const getStudentSummary = async (studentId, type, week, batchId, topic) => {
   const progressList = await getStudentProgress(
     studentId,
@@ -544,10 +495,6 @@ const getStudentSummary = async (studentId, type, week, batchId, topic) => {
   };
 };
 
-// ======================================================
-// STUDENT RANK
-// ======================================================
-
 const getStudentRank = async (studentId, type, week, batchId, topic) => {
   const selectedBatch = await getSelectedStudentBatch(studentId, batchId);
 
@@ -587,10 +534,6 @@ const getStudentRank = async (studentId, type, week, batchId, topic) => {
     totalStudents: rankings.length,
   };
 };
-
-// ======================================================
-// STUDENT DASHBOARD
-// ======================================================
 
 const getProgressDashboard = async (studentId, batchId) => {
   const student = await User.findById(studentId).select(
@@ -644,10 +587,6 @@ const getProgressDashboard = async (studentId, batchId) => {
 
 const getStudentDashboard = getProgressDashboard;
 
-// ======================================================
-// GET MENTOR TEAMS
-// ======================================================
-
 const getMentorTeams = async (mentorId, batchId) => {
   const filter = {
     mentors: mentorId,
@@ -659,10 +598,6 @@ const getMentorTeams = async (mentorId, batchId) => {
 
   return Team.find(filter).select("_id name gender batch mentors students");
 };
-
-// ======================================================
-// GET MENTOR STUDENTS
-// ======================================================
 
 const getMentorStudents = async (mentorId, batchId) => {
   const teams = await getMentorTeams(mentorId, batchId);
@@ -696,10 +631,6 @@ const getMentorStudents = async (mentorId, batchId) => {
   }).select("firstName lastName email gender batch");
 };
 
-// ======================================================
-// MENTOR PROGRESS
-// ======================================================
-
 const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
   validateObjectId(mentorId, "mentor ID");
 
@@ -714,10 +645,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
 
   let selectedBatch = batchId || mentor.batch;
 
-  /*
-   * If the mentor has no batch directly on the User
-   * document, get the batch from the mentor's team.
-   */
   if (!selectedBatch) {
     const team = await Team.findOne({
       mentors: mentorId,
@@ -734,15 +661,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
 
   validateObjectId(selectedBatch, "batch ID");
 
-  /*
-   * IMPORTANT:
-   *
-   * We get students from Team.students,
-   * not only User.assignedStudents.
-   *
-   * This guarantees the mentor can only see
-   * students belonging to their own team.
-   */
   const students = await getMentorStudents(mentorId, selectedBatch);
 
   if (!students.length) {
@@ -808,15 +726,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
       }
     }
 
-    /*
-     * Use the real StudentProgress values.
-     *
-     * This is especially important for:
-     *
-     * Completed
-     * In Progress
-     * Needs Help
-     */
     const atRisk =
       overall.completion < 50 || cp.needsHelp > 0 || dev.needsHelp > 0;
 
@@ -844,24 +753,27 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
 
     result.push({
       student: {
+        _id: student._id,
         id: student._id,
+        firstName: student.firstName,
+        lastName: student.lastName,
         name: `${student.firstName} ${student.lastName}`,
         email: student.email,
         gender: student.gender,
         batch: student.batch,
       },
 
-      /*
-       * Existing dashboard fields.
-       */
       cp,
       dev,
       overall,
 
-      /*
-       * Detailed actual status counts.
-       */
       completed: statusCounts.completed,
+
+      total: items.length,
+
+      completion: items.length
+        ? Math.round((statusCounts.completed / items.length) * 100)
+        : 0,
 
       inProgress: statusCounts.inProgress,
 
@@ -869,14 +781,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
 
       notStarted: statusCounts.notStarted,
 
-      /*
-       * Also expose a progress object
-       * so the frontend can use:
-       *
-       * student.progress.completed
-       * student.progress.inProgress
-       * student.progress.needsHelp
-       */
       progress: {
         total: items.length,
 
@@ -892,7 +796,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
           ? Math.round((statusCounts.completed / items.length) * 100)
           : 0,
       },
-
       items,
 
       notes,
@@ -910,10 +813,6 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
 
   return result.sort((a, b) => b.overall.completion - a.overall.completion);
 };
-
-// ======================================================
-// FALLING BEHIND
-// ======================================================
 
 const getFallingBehindStudents = async (
   mentorId,
@@ -941,11 +840,6 @@ const getFallingBehindStudents = async (
       student.dev.needsHelp > 0,
   );
 };
-
-// ======================================================
-// ADMIN OVERALL PROGRESS
-// ======================================================
-
 const getOverallProgress = async (type, week, batchId, topic) => {
   if (!batchId) {
     throw new Error("Batch ID is required");
@@ -980,10 +874,6 @@ const getOverallProgress = async (type, week, batchId, topic) => {
   );
 };
 
-// ======================================================
-// UNPUBLISH
-// ======================================================
-
 const unpublishProgressContent = async (contentId) => {
   validateObjectId(contentId, "content ID");
 
@@ -1003,10 +893,6 @@ const unpublishProgressContent = async (contentId) => {
 
   return content;
 };
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   createProgressContent,

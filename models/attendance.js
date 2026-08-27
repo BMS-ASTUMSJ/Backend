@@ -1,25 +1,5 @@
 const mongoose = require("mongoose");
 
-const checkSchema = new mongoose.Schema(
-  {
-    status: {
-      type: String,
-      enum: ["Present", "Absent", "Late", "Excused", null],
-      default: null,
-    },
-    markedAt: {
-      type: Date,
-      default: null,
-    },
-    markedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-  },
-  { _id: false }
-);
-
 const attendanceSchema = new mongoose.Schema(
   {
     studentId: {
@@ -29,108 +9,107 @@ const attendanceSchema = new mongoose.Schema(
       index: true,
     },
 
-    mentorId: {
+    batchId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Batch",
       required: true,
+      index: true,
     },
 
     teamId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Team",
-      default: null,
+      required: true,
+      index: true,
     },
 
-    batchId: {
+    sessionId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Batch",
-      default: null,
+      ref: "Session",
+      required: false,
+      default: undefined,
     },
 
     week: {
       type: Number,
       required: true,
-      min: 1,
-      max: 12,
       index: true,
-    },
-
-    dayName: {
-      type: String,
-      enum: [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-      ],
-      required: true,
-    },
-
-    meetingType: {
-      type: String,
-      enum: [
-        "Daily Meeting",
-        "Sunday Weekly Meeting",
-      ],
-      required: true,
     },
 
     sessionType: {
       type: String,
-      default: "Daily Meeting",
+      required: true,
+      trim: true,
     },
 
     sessionName: {
       type: String,
-      default: "",
+      required: true,
+      trim: true,
     },
 
     date: {
       type: Date,
-      default: Date.now,
+      required: true,
+      index: true,
+    },
+
+    gender: {
+      type: String,
+      enum: ["Male", "Female"],
+      required: true,
     },
 
     firstCheck: {
-      type: checkSchema,
-      default: () => ({}),
+      status: {
+        type: String,
+        enum: ["Present", "Absent", "Late", "Excused"],
+        default: null,
+      },
+
+      markedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+
+      timestamp: {
+        type: Date,
+      },
     },
 
     secondCheck: {
-      type: checkSchema,
-      default: () => ({}),
-    },
+      status: {
+        type: String,
+        enum: ["Present", "Absent", "Late", "Excused"],
+        default: null,
+      },
 
-    status: {
-      type: String,
-      enum: [
-        "Present",
-        "Absent",
-        "Late",
-        "Excused",
-        "Not Marked",
-      ],
-      default: "Not Marked",
+      markedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+
+      timestamp: {
+        type: Date,
+      },
     },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 attendanceSchema.index(
   {
     studentId: 1,
-    week: 1,
-    dayName: 1,
+    teamId: 1,
+    sessionId: 1,
   },
   {
     unique: true,
-  }
+    name: "student_team_session_unique",
+  },
 );
 
 module.exports =
-  mongoose.models.Attendance ||
-  mongoose.model("Attendance", attendanceSchema);
+  mongoose.models.Attendance || mongoose.model("Attendance", attendanceSchema);

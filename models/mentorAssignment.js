@@ -1,23 +1,31 @@
 const mongoose = require("mongoose");
 
-const assignmentFileSchema = new mongoose.Schema(
+const mentorAssignmentFileSchema = new mongoose.Schema(
   {
     originalName: {
       type: String,
       required: true,
+      trim: true,
     },
+
     fileName: {
       type: String,
       required: true,
+      trim: true,
     },
+
     fileUrl: {
       type: String,
       required: true,
+      trim: true,
     },
+
     mimetype: {
       type: String,
       default: "",
+      trim: true,
     },
+
     size: {
       type: Number,
       default: 0,
@@ -28,45 +36,53 @@ const assignmentFileSchema = new mongoose.Schema(
   },
 );
 
-const assignmentSchema = new mongoose.Schema(
+const mentorAssignmentSchema = new mongoose.Schema(
   {
     title: {
       type: String,
       required: true,
       trim: true,
     },
+
     description: {
       type: String,
       required: true,
       trim: true,
     },
+
     instructorName: {
       type: String,
       required: true,
       trim: true,
     },
-    batch: {
+
+    mentor: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Batch",
+      ref: "User",
       required: true,
+      index: true,
     },
+
+    assignedStudents: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
     deadline: {
       type: Date,
       required: true,
     },
-    maxScore: {
-      type: Number,
-      required: true,
-      default: 100,
-      min: 1,
-    },
+
     link: {
       type: String,
       default: "",
       trim: true,
     },
+
     files: {
-      type: [assignmentFileSchema],
+      type: [mentorAssignmentFileSchema],
       default: [],
     },
   },
@@ -75,7 +91,18 @@ const assignmentSchema = new mongoose.Schema(
   },
 );
 
-assignmentSchema.index({ batch: 1, deadline: 1 });
+mentorAssignmentSchema.index({
+  mentor: 1,
+  createdAt: -1,
+});
 
-module.exports =
-  mongoose.models.Assignment || mongoose.model("Assignment", assignmentSchema);
+mentorAssignmentSchema.index({
+  assignedStudents: 1,
+  createdAt: -1,
+});
+
+mentorAssignmentSchema.index({
+  deadline: 1,
+});
+
+module.exports = mongoose.model("MentorAssignment", mentorAssignmentSchema);

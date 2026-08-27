@@ -5,10 +5,6 @@ const Batch = require("../models/batch");
 
 const { calculateStudentRisk } = require("../services/atRiskService");
 
-// ============================================================
-// DEFAULT EMPTY RISK
-// ============================================================
-
 const emptyRisk = {
   attendanceIssues: 0,
   assignmentIssues: 0,
@@ -22,15 +18,9 @@ const emptyRisk = {
   message: "Student is currently on track.",
 };
 
-// ============================================================
-// STUDENT - GET MY RISK STATUS
-// ============================================================
-
 const getMyRiskStatus = async (req, res) => {
   try {
-    const student = await User.findById(req.user._id).select(
-      "_id role batch",
-    );
+    const student = await User.findById(req.user._id).select("_id role batch");
 
     if (!student) {
       return res.status(404).json({
@@ -55,7 +45,6 @@ const getMyRiskStatus = async (req, res) => {
 
     const risk = await calculateStudentRisk(student._id, student.batch);
 
-    // Optional: keep the stored atRisk field updated
     if (student.atRisk !== risk.isAtRisk) {
       await User.findByIdAndUpdate(student._id, {
         atRisk: risk.isAtRisk,
@@ -75,10 +64,6 @@ const getMyRiskStatus = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// MENTOR - GET ONLY MY ASSIGNED STUDENTS WITH RISK STATUS
-// ============================================================
 
 const getMyAssignedStudents = async (req, res) => {
   try {
@@ -114,7 +99,6 @@ const getMyAssignedStudents = async (req, res) => {
 
     const studentsWithRisk = await Promise.all(
       assignedStudents.map(async (student) => {
-        // Student has no current batch
         if (!student.batch) {
           const risk = emptyRisk;
 
@@ -141,10 +125,8 @@ const getMyAssignedStudents = async (req, res) => {
 
         const batchId = student.batch._id || student.batch;
 
-        // Calculate LIVE risk
         const risk = await calculateStudentRisk(student._id, batchId);
 
-        // Update the student's stored atRisk field
         await User.findByIdAndUpdate(student._id, {
           atRisk: risk.isAtRisk,
         });
@@ -170,10 +152,8 @@ const getMyAssignedStudents = async (req, res) => {
 
           batch: student.batch,
 
-          // IMPORTANT FOR FRONTEND
           atRisk: risk.isAtRisk,
 
-          // IMPORTANT FOR FRONTEND
           risk: {
             attendanceIssues: risk.attendanceIssues,
             assignmentIssues: risk.assignmentIssues,
@@ -193,9 +173,8 @@ const getMyAssignedStudents = async (req, res) => {
     return res.status(200).json({
       success: true,
       totalStudents: studentsWithRisk.length,
-      atRiskCount: studentsWithRisk.filter(
-        (student) => student.atRisk === true,
-      ).length,
+      atRiskCount: studentsWithRisk.filter((student) => student.atRisk === true)
+        .length,
       students: studentsWithRisk,
     });
   } catch (error) {
@@ -207,10 +186,6 @@ const getMyAssignedStudents = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// ADMIN - GET ALL AT-RISK STUDENTS IN A BATCH
-// ============================================================
 
 const getBatchAtRiskStudents = async (req, res) => {
   try {

@@ -1,10 +1,10 @@
 const mongoose = require("mongoose");
 
-const submissionSchema = new mongoose.Schema(
+const mentorAssignmentSubmissionSchema = new mongoose.Schema(
   {
     assignment: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Assignment",
+      ref: "MentorAssignment",
       required: true,
     },
 
@@ -22,41 +22,23 @@ const submissionSchema = new mongoose.Schema(
 
     liveDemoUrl: {
       type: String,
-      trim: true,
       default: "",
+      trim: true,
     },
 
     notes: {
       type: String,
-      trim: true,
       default: "",
-    },
-
-    score: {
-      type: Number,
-      default: null,
-      min: 0,
+      trim: true,
     },
 
     feedback: {
       type: String,
-      trim: true,
       default: "",
+      trim: true,
     },
 
-    status: {
-      type: String,
-      enum: ["Pending", "Graded", "Resubmission Required"],
-      default: "Pending",
-    },
-
-    gradedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-
-    gradedAt: {
+    feedbackAt: {
       type: Date,
       default: null,
     },
@@ -66,7 +48,7 @@ const submissionSchema = new mongoose.Schema(
   },
 );
 
-submissionSchema.index(
+mentorAssignmentSubmissionSchema.index(
   {
     assignment: 1,
     student: 1,
@@ -76,5 +58,7 @@ submissionSchema.index(
   },
 );
 
-module.exports =
-  mongoose.models.Submission || mongoose.model("Submission", submissionSchema);
+module.exports = mongoose.model(
+  "MentorAssignmentSubmission",
+  mentorAssignmentSubmissionSchema,
+);

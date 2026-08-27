@@ -5,6 +5,14 @@ const crypto = require("crypto");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
+const Attendance = require("../models/attendance");
+const Assignment = require("../models/assignment");
+const Submission = require("../models/submission");
+const ProgressContent = require("../models/progressContent");
+const StudentProgress = require("../models/studentProgress");
+const Announcement = require("../models/announcement");
+const ProjectTracking = require("../models/projectTracking");
+
 let sendEmail;
 
 try {
@@ -184,7 +192,7 @@ const updateUserStatus = async (req, res) => {
       {
         new: true,
         runValidators: false,
-      }
+      },
     ).select("-password");
 
     return res.status(200).json({
@@ -263,11 +271,11 @@ const assignMentor = async (req, res) => {
     }
 
     const oldMentorIds = (student.assignedMentors || []).map((id) =>
-      id.toString()
+      id.toString(),
     );
 
     const removedMentorIds = oldMentorIds.filter(
-      (oldId) => !uniqueMentorIds.includes(oldId)
+      (oldId) => !uniqueMentorIds.includes(oldId),
     );
 
     if (removedMentorIds.length > 0) {
@@ -279,7 +287,7 @@ const assignMentor = async (req, res) => {
           $pull: {
             assignedStudents: student._id,
           },
-        }
+        },
       );
     }
 
@@ -294,7 +302,7 @@ const assignMentor = async (req, res) => {
         $addToSet: {
           assignedStudents: student._id,
         },
-      }
+      },
     );
 
     return res.status(200).json({
@@ -394,7 +402,7 @@ const getMentors = async (req, res) => {
       .select("-password")
       .populate(
         "assignedStudents",
-        "firstName lastName email gender phone atRisk batch"
+        "firstName lastName email gender phone atRisk batch",
       )
       .populate("batch", "name status startDate endDate")
       .sort({
@@ -469,7 +477,7 @@ const getMyRiskStatus = async (req, res) => {
     }
 
     const student = await User.findById(req.user._id).select(
-      "_id firstName lastName email role atRisk"
+      "_id firstName lastName email role atRisk",
     );
 
     if (!student) {
@@ -504,14 +512,14 @@ const getStudentDashboard = async (req, res) => {
     if (req.user.role !== "student") {
       return res.status(403).json({
         success: false,
-        message: "Only students can access the student dashboard",
+        message: "Only students can access dashboard",
       });
     }
 
     const student = await User.findById(req.user._id)
-      .select("_id firstName lastName email role atRisk batch assignedMentors")
-      .populate("batch", "name status startDate endDate description")
-      .populate("assignedMentors", "firstName lastName email gender phone");
+      .select("-password")
+      .populate("batch", "name status")
+      .populate("assignedMentors", "firstName lastName email");
 
     if (!student) {
       return res.status(404).json({
@@ -520,27 +528,161 @@ const getStudentDashboard = async (req, res) => {
       });
     }
 
+    const attendanceRecords = await Attendance.find({
+      studentId: student._id,
+    });
+
+    const attendanceStatusList = attendanceRecords.map((record) => {
+      return (
+        record.secondCheck?.status || record.firstCheck?.status || "Absent"
+      );
+    });
+
+    const presentCount = attendanceStatusList.filter(
+      (status) => status === "Present" || status === "Late",
+    ).length;
+
+    const absentCount = attendanceStatusList.filter(
+      (status) => status === "Absent",
+    ).length;
+
+    const excusedCount = attendanceStatusList.filter(
+      (status) => status === "Excused",
+    ).length;
+
+    const totalAttendanceSessions = attendanceStatusList.length;
+
+    const attendancePercentage =
+      totalAttendanceSessions === 0
+        ? 0
+        : Math.round((presentCount / totalAttendanceSessions) * 100);
+
+    const assignments = await Assignment.find({
+      batch: student.batch?._id,
+    });
+
+    const submissions = await Submission.find({
+      student: student._id,
+    });
+
+    const submittedAssignments = submissions.length;
+
+    const missedAssignments = assignments.length - submittedAssignments;
+
+    const gradedSubmissions = submissions.filter(
+      (item) => item.status === "Graded" && item.score !== null,
+    );
+
+    const averageGrade =
+      gradedSubmissions.length === 0
+        ? 0
+        : Math.round(
+            gradedSubmissions.reduce((sum, item) => sum + item.score, 0) /
+              gradedSubmissions.length,
+          );
+
+    const progressContents = await ProgressContent.find({
+      batch: student.batch?._id,
+      isPublished: true,
+    });
+
+    const studentProgress = await StudentProgress.find({
+      student: student._id,
+      batch: student.batch?._id,
+    });
+
+    const totalCP = progressContents.filter(
+      (item) => item.type === "cp",
+    ).length;
+
+    const totalDev = progressContents.filter(
+      (item) => item.type === "dev",
+    ).length;
+
+    const completedCP = studentProgress.filter(
+      (item) => item.type === "cp" && item.status === "done",
+    ).length;
+
+    const completedDev = studentProgress.filter(
+      (item) => item.type === "dev" && item.status === "done",
+    ).length;
+
+    const completedProjects = await ProjectTracking.find({
+      "students.student": student._id,
+    });
+
+    const completedProjectCount = completedProjects.reduce(
+      (total, project) =>
+        total +
+        project.students.filter(
+          (s) => s.student.toString() === student._id.toString(),
+        ).length,
+      0,
+    );
+
+    const totalProgress = assignments.length + totalCP + totalDev;
+
+    const completedProgress = submittedAssignments + completedCP + completedDev;
+
+    const announcements = await Announcement.find({
+      audience: "all",
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .limit(5);
+
     return res.status(200).json({
       success: true,
-      student: {
-        _id: student._id,
-        firstName: student.firstName,
-        lastName: student.lastName,
-        email: student.email,
-        role: student.role,
-        atRisk: Boolean(student.atRisk),
-        batch: student.batch,
-        assignedMentors: student.assignedMentors,
+
+      dashboard: {
+        student,
+
+        attendance: {
+          percentage: attendancePercentage,
+          present: presentCount,
+          absent: absentCount,
+        },
+
+        progress: {
+          completed: completedProgress,
+          total: totalProgress,
+          percentage:
+            totalProgress === 0
+              ? 0
+              : Math.round((completedProgress / totalProgress) * 100),
+        },
+
+        assignments: {
+          total: assignments.length,
+          submitted: submittedAssignments,
+          missed: missedAssignments < 0 ? 0 : missedAssignments,
+        },
+
+        grades: {
+          average: averageGrade,
+        },
+
+        announcements,
+
+        risk: {
+          isAtRisk: Boolean(student.atRisk),
+
+          reasons: student.atRisk
+            ? ["Your performance requires attention"]
+            : [],
+        },
       },
     });
   } catch (error) {
+    console.error("STUDENT DASHBOARD ERROR:", error);
+
     return res.status(500).json({
       success: false,
-      message: "Error fetching student dashboard",
+      message: "Error loading dashboard",
     });
   }
 };
-
 const updateStudentRiskStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -671,7 +813,7 @@ const deleteUser = async (req, res) => {
           $pull: {
             assignedStudents: user._id,
           },
-        }
+        },
       );
     }
 
@@ -682,7 +824,7 @@ const deleteUser = async (req, res) => {
           $pull: {
             assignedMentors: user._id,
           },
-        }
+        },
       );
     }
 
@@ -726,7 +868,10 @@ const getProfile = async (req, res) => {
     const user = await User.findById(req.user._id)
       .select("-password")
       .populate("assignedMentors", "firstName lastName email gender phone")
-      .populate("assignedStudents", "firstName lastName email gender phone atRisk")
+      .populate(
+        "assignedStudents",
+        "firstName lastName email gender phone atRisk",
+      )
       .populate("batch", "name status startDate endDate description")
       .populate("batchHistory.batch", "name status startDate endDate");
 
@@ -802,7 +947,10 @@ const updateProfile = async (req, res) => {
     const updatedUser = await User.findById(user._id)
       .select("-password")
       .populate("assignedMentors", "firstName lastName email gender phone")
-      .populate("assignedStudents", "firstName lastName email gender phone atRisk")
+      .populate(
+        "assignedStudents",
+        "firstName lastName email gender phone atRisk",
+      )
       .populate("batch", "name status startDate endDate")
       .populate("batchHistory.batch", "name status startDate endDate");
 
@@ -880,7 +1028,7 @@ const changeUserBatch = async (req, res) => {
     }
 
     const existingHistoryIndex = user.batchHistory.findIndex(
-      (item) => item.batch && item.batch.toString() === batch._id.toString()
+      (item) => item.batch && item.batch.toString() === batch._id.toString(),
     );
 
     if (existingHistoryIndex === -1) {
@@ -900,7 +1048,7 @@ const changeUserBatch = async (req, res) => {
           $pull: {
             assignedStudents: user._id,
           },
-        }
+        },
       );
       user.assignedMentors = [];
     }
@@ -912,7 +1060,7 @@ const changeUserBatch = async (req, res) => {
           $pull: {
             assignedMentors: user._id,
           },
-        }
+        },
       );
       user.assignedStudents = [];
     }
@@ -924,7 +1072,7 @@ const changeUserBatch = async (req, res) => {
       .populate("batch", "name status startDate endDate description")
       .populate(
         "batchHistory.batch",
-        "name status startDate endDate description"
+        "name status startDate endDate description",
       );
 
     return res.status(200).json({

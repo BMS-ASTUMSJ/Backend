@@ -11,32 +11,9 @@ const {
   getBatchAtRiskStudents,
 } = require("../controllers/atRiskController");
 
-// ============================================================
-// STUDENT - GET MY OWN RISK STATUS
-// ============================================================
+router.get("/my-status", protect, authorize("student"), getMyRiskStatus);
 
-router.get(
-  "/my-status",
-  protect,
-  authorize("student"),
-  getMyRiskStatus,
-);
-
-// ============================================================
-// MENTOR - GET ONLY MY ASSIGNED STUDENTS
-// WITH THEIR LIVE RISK STATUS
-// ============================================================
-
-router.get(
-  "/my-students",
-  protect,
-  authorize("mentor"),
-  getMyAssignedStudents,
-);
-
-// ============================================================
-// ADMIN - GET AT-RISK STUDENTS FOR A BATCH
-// ============================================================
+router.get("/my-students", protect, authorize("mentor"), getMyAssignedStudents);
 
 router.get(
   "/batch/:batchId",

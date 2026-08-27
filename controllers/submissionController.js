@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
-const Submission = require("../models/Submission");
-const Assignment = require("../models/Assignment");
+
+const Submission = require("../models/submission");
+const Assignment = require("../models/assignment");
+const MentorAssignmentSubmission = require("../models/mentorAssignmentSubmission");
+const MentorAssignment = require("../models/mentorAssignment");
 const Team = require("../models/team");
 const User = require("../models/user");
 
@@ -80,13 +83,9 @@ const submitAssignment = async (req, res) => {
       const submission = await Submission.create({
         assignment: assignmentId,
         student: student._id,
-
         githubUrl: githubUrl.trim(),
-
         liveDemoUrl: liveDemoUrl?.trim() || "",
-
         notes: notes?.trim() || "",
-
         score: null,
         feedback: "",
         status: "Pending",
@@ -114,11 +113,8 @@ const submitAssignment = async (req, res) => {
     }
 
     existingSubmission.githubUrl = githubUrl.trim();
-
     existingSubmission.liveDemoUrl = liveDemoUrl?.trim() || "";
-
     existingSubmission.notes = notes?.trim() || "";
-
     existingSubmission.score = null;
     existingSubmission.feedback = "";
     existingSubmission.status = "Pending";
@@ -159,7 +155,6 @@ const submitAssignment = async (req, res) => {
 const updateSubmission = async (req, res) => {
   try {
     const { id } = req.params;
-
     const { githubUrl, liveDemoUrl, notes } = req.body;
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
@@ -216,11 +211,8 @@ const updateSubmission = async (req, res) => {
     }
 
     submission.githubUrl = githubUrl.trim();
-
     submission.liveDemoUrl = liveDemoUrl?.trim() || "";
-
     submission.notes = notes?.trim() || "";
-
     submission.status = "Pending";
 
     await submission.save();
@@ -245,10 +237,30 @@ const updateSubmission = async (req, res) => {
   }
 };
 
+const mentorCanGradeStudent = async (mentorId, studentId) => {
+  const team = await Team.findOne({
+    mentors: mentorId,
+    students: studentId,
+  });
+
+  if (team) {
+    return true;
+  }
+
+  const mentor = await User.findById(mentorId).select("assignedStudents");
+
+  if (!mentor) {
+    return false;
+  }
+
+  return (mentor.assignedStudents || []).some(
+    (id) => id.toString() === studentId.toString(),
+  );
+};
+
 const gradeSubmission = async (req, res) => {
   try {
     const { id } = req.params;
-
     const { score, feedback = "", status = "Graded" } = req.body;
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
@@ -323,12 +335,12 @@ const gradeSubmission = async (req, res) => {
     }
 
     if (req.user.role === "mentor") {
-      const team = await Team.findOne({
-        mentors: req.user._id,
-        students: submission.student,
-      });
+      const canGrade = await mentorCanGradeStudent(
+        req.user._id,
+        submission.student,
+      );
 
-      if (!team) {
+      if (!canGrade) {
         return res.status(403).json({
           success: false,
           message: "You are not assigned to this student.",
@@ -336,21 +348,17 @@ const gradeSubmission = async (req, res) => {
       }
     }
 
-    if (req.user.role !== "admin" && req.user.role !== "mentor") {
+    if (req.user.role !== "mentor") {
       return res.status(403).json({
         success: false,
-        message: "Only mentors and admins can grade submissions.",
+        message: "Only mentors can grade submissions.",
       });
     }
 
     submission.score = numericScore;
-
     submission.feedback = typeof feedback === "string" ? feedback.trim() : "";
-
     submission.status = status;
-
     submission.gradedBy = req.user._id;
-
     submission.gradedAt = new Date();
 
     await submission.save();
@@ -404,11 +412,26 @@ const getSubmissionsByAssignment = async (req, res) => {
     };
 
     if (req.user.role === "mentor") {
+      const mentor = await User.findById(req.user._id).select(
+        "assignedStudents",
+      );
+
+      const assignedStudents = mentor?.assignedStudents || [];
+
       const teams = await Team.find({
         mentors: req.user._id,
       }).select("students");
 
-      const studentIds = teams.flatMap((team) => team.students || []);
+      const teamStudentIds = teams.flatMap((team) => team.students || []);
+
+      const studentIds = [
+        ...new Map(
+          [...assignedStudents, ...teamStudentIds].map((id) => [
+            id.toString(),
+            id,
+          ]),
+        ).values(),
+      ];
 
       query.student = {
         $in: studentIds,

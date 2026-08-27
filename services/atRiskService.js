@@ -1,15 +1,9 @@
 const Attendance = require("../models/attendance");
-const Assignment = require("../models/Assignment");
-const Submission = require("../models/Submission");
-
-
+const Assignment = require("../models/assignment");
+const Submission = require("../models/submission");
 
 const ABSENCE_THRESHOLD = 2;
 const MISSED_ASSIGNMENT_THRESHOLD = 2;
-
-// 
-// CALCULATE STUDENT RISK
-// ============================================================
 
 const calculateStudentRisk = async (studentId, batchId) => {
   try {
@@ -28,10 +22,6 @@ const calculateStudentRisk = async (studentId, batchId) => {
       };
     }
 
-    // ========================================================
-    // ATTENDANCE
-    // ========================================================
-
     const attendanceRecords = await Attendance.find({
       studentId,
       batchId,
@@ -49,19 +39,11 @@ const calculateStudentRisk = async (studentId, batchId) => {
       }
     });
 
-    // ========================================================
-    // ASSIGNMENTS FOR THIS BATCH
-    // ========================================================
-
     const assignments = await Assignment.find({
       batch: batchId,
     }).select("_id deadline");
 
     const assignmentIds = assignments.map((assignment) => assignment._id);
-
-    // ========================================================
-    // STUDENT SUBMISSIONS
-    // ========================================================
 
     const submissions = await Submission.find({
       student: studentId,
@@ -73,14 +55,6 @@ const calculateStudentRisk = async (studentId, batchId) => {
     const submittedAssignmentIds = new Set(
       submissions.map((submission) => String(submission.assignment)),
     );
-
-    // ========================================================
-    // MISSED ASSIGNMENTS
-    //
-    // An assignment is missed when:
-    // 1. Deadline has passed
-    // 2. Student did not submit
-    // ========================================================
 
     const now = new Date();
 
@@ -94,10 +68,6 @@ const calculateStudentRisk = async (studentId, batchId) => {
     });
 
     const missedAssignmentCount = missedAssignments.length;
-
-    // ========================================================
-    // DETERMINE RISK
-    // ========================================================
 
     const attendanceAtRisk = absenceCount >= ABSENCE_THRESHOLD;
 

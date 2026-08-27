@@ -276,6 +276,7 @@ const updateAnnouncement = async (req, res) => {
     announcement.body = body.trim();
     announcement.audience = audience;
 
+    announcement.edited = true;
     // updatedAt is automatically changed by timestamps:true
     await announcement.save();
 
