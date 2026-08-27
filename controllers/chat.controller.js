@@ -192,7 +192,7 @@ const sendMessage = async (req, res) => {
 
       limit: limit !== undefined ? Number(limit) : 5,
 
-      minScore: minScore !== undefined ? Number(minScore) : 0.5,
+      minScore: minScore !== undefined ? Number(minScore) : 0.3,
 
       documentId: documentId || null,
     });
@@ -315,12 +315,55 @@ const renameChat = async (req, res) => {
 // ======================================================
 // EXPORT
 // ======================================================
+// ======================================================
+// PUBLIC AI QUESTION
+// ======================================================
 
+const answerPublicQuestion = async (req, res) => {
+  try {
+    const { message, limit, minScore, documentId } = req.body;
+
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Message is required",
+      });
+    }
+
+    const result = await chatService.answerPublicQuestion({
+      message,
+      limit,
+      minScore,
+      documentId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Question answered successfully",
+
+      answer: result.answer,
+
+      sources: result.sources,
+
+      model: result.model,
+
+      rag: result.rag,
+    });
+  } catch (error) {
+    console.error("Public AI question error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to answer question",
+    });
+  }
+};
 module.exports = {
   createChat,
   getUserChats,
   getChatById,
   sendMessage,
   deleteChat,
+  answerPublicQuestion,
   renameChat,
 };

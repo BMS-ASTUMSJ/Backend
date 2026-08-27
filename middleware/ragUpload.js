@@ -18,7 +18,7 @@ if (!fs.existsSync(uploadDirectory)) {
 // ALLOWED EXTENSIONS
 // ======================================================
 
-const allowedExtensions = [".pdf", ".docx", ".txt"];
+const allowedExtensions = [".pdf", ".doc", ".docx", ".txt"];
 
 // ======================================================
 // STORAGE
@@ -50,7 +50,7 @@ const fileFilter = (req, file, cb) => {
   if (!allowedExtensions.includes(extension)) {
     return cb(
       new Error(
-        "Unsupported file type. Only PDF, DOCX, and TXT files are allowed.",
+        "Unsupported file type. Only PDF, DOC, DOCX, and TXT files are allowed.",
       ),
     );
   }

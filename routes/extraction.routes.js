@@ -1,6 +1,6 @@
 const express = require("express");
 
-const upload = require("../middleware/upload");
+const upload = require("../middleware/ragUpload");
 const extractionController = require("../controllers/extraction.controller");
 
 const router = express.Router();

@@ -2,85 +2,147 @@ const retrievalService = require("./retrieval.service");
 const llmService = require("./llm.service");
 
 // ======================================================
+// CONFIGURATION
+// ======================================================
+
+const DEFAULT_LIMIT = 5;
+const MAX_LIMIT = 20;
+
+// ======================================================
+// OUT OF SCOPE MESSAGE
+// ======================================================
+
+const OUT_OF_SCOPE_MESSAGE =
+  "I don't have information about that. I am only the ASTU MSJ Summer Bootcamp Assistant.";
+
+// ======================================================
+// IMPORTANT
+// ======================================================
+//
+// MongoDB Atlas vector search scores can vary depending on
+// the embedding model and similarity configuration.
+//
+// 0.7 was too strict for your current setup.
+//
+// Start with 0.30 and test the actual scores in your
+// backend console.
+//
+// ======================================================
+
+const DEFAULT_MIN_SCORE = 0.3;
+
+// ======================================================
+// NORMALIZE OPTIONS
+// ======================================================
+
+const normalizeOptions = (options = {}) => {
+  const parsedLimit = Number(options.limit);
+
+  const limit =
+    Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(Math.floor(parsedLimit), MAX_LIMIT)
+      : DEFAULT_LIMIT;
+
+  const parsedMinScore = Number(options.minScore);
+
+  const minScore =
+    Number.isFinite(parsedMinScore) && parsedMinScore >= 0
+      ? parsedMinScore
+      : DEFAULT_MIN_SCORE;
+
+  return {
+    limit,
+    minScore,
+    documentId: options.documentId || null,
+  };
+};
+
+// ======================================================
 // BUILD RAG CONTEXT
 // ======================================================
 
 const buildContext = async (query, options = {}) => {
-  if (!query || !query.trim()) {
+  if (!query || !String(query).trim()) {
     throw new Error("Query is required");
   }
 
-  // ====================================================
-  // OPTIONS
-  // ====================================================
+  const cleanQuery = String(query).trim();
 
-  const limit =
-    Number.isFinite(Number(options.limit)) && Number(options.limit) > 0
-      ? Number(options.limit)
-      : 5;
-
-  const minScore =
-    options.minScore !== undefined &&
-    options.minScore !== null &&
-    options.minScore !== ""
-      ? Number(options.minScore)
-      : 0;
+  const { limit, minScore, documentId } = normalizeOptions(options);
 
   // ====================================================
-  // RETRIEVE MORE RESULTS
-  // ====================================================
-  // We retrieve more than the requested limit because
-  // some results may be duplicates.
-  //
-  // Example:
-  //
-  // Requested: 5
-  //
-  // Vector search:
-  // 1. rag.pdf
-  // 2. rag.pdf
-  // 3. rag.pdf
-  // 4. another.pdf
-  // 5. policy.pdf
-  //
-  // After deduplication:
-  // 1. rag.pdf
-  // 2. another.pdf
-  // 3. policy.pdf
-  //
+  // RETRIEVE MORE RESULTS THAN WE FINALLY USE
   // ====================================================
 
-  const searchLimit = Math.max(limit * 3, limit);
+  const searchLimit = Math.min(Math.max(limit * 4, limit), MAX_LIMIT);
 
-  const searchResult = await retrievalService.searchSimilarChunks(query, {
+  console.log("==========================================");
+  console.log("BUILDING RAG CONTEXT");
+  console.log("==========================================");
+  console.log("Question:", cleanQuery);
+  console.log("Search limit:", searchLimit);
+  console.log("Final context limit:", limit);
+  console.log("Minimum score:", minScore);
+  console.log("Document:", documentId || "ALL PROCESSED DOCUMENTS");
+
+  // ====================================================
+  // VECTOR SEARCH
+  // ====================================================
+
+  const searchResult = await retrievalService.searchSimilarChunks(cleanQuery, {
     limit: searchLimit,
+    documentId,
+  });
 
-    documentId: options.documentId || null,
+  const rawResults = Array.isArray(searchResult.results)
+    ? searchResult.results
+    : [];
+
+  console.log("==========================================");
+  console.log("RAW VECTOR SEARCH RESULTS");
+  console.log("==========================================");
+  console.log("Total results:", rawResults.length);
+
+  rawResults.forEach((result, index) => {
+    console.log(
+      `#${index + 1}`,
+      "score:",
+      Number(result.score),
+      "chunk:",
+      result.chunkIndex,
+      "document:",
+      result.document,
+    );
+
+    console.log(
+      "content preview:",
+      String(result.content || "")
+        .replace(/\s+/g, " ")
+        .substring(0, 200),
+    );
   });
 
   // ====================================================
-  // SCORE FILTER
+  // FILTER RESULTS
   // ====================================================
 
-  const filteredResults = (searchResult.results || []).filter((result) => {
+  const filteredResults = rawResults.filter((result) => {
     const score = Number(result.score);
 
-    return Number.isFinite(score) && score >= minScore;
+    return (
+      Number.isFinite(score) &&
+      score >= minScore &&
+      String(result.content || "").trim().length > 0
+    );
   });
+
+  console.log("==========================================");
+  console.log("FILTERED RESULTS");
+  console.log("==========================================");
+  console.log("Relevant results:", filteredResults.length);
 
   // ====================================================
   // REMOVE DUPLICATES
-  // ====================================================
-  //
-  // A duplicate is considered the same when:
-  //
-  // 1. It belongs to the same document
-  // 2. It contains the same chunk content
-  //
-  // This is safer than deduplicating only by document ID,
-  // because one document can legitimately contain multiple
-  // different chunks.
-  //
   // ====================================================
 
   const seenChunks = new Set();
@@ -88,17 +150,16 @@ const buildContext = async (query, options = {}) => {
   const uniqueResults = [];
 
   for (const result of filteredResults) {
-    const documentId = String(result.document || "");
+    const documentKey = String(result.document || "");
 
-    const content = String(result.content || "")
+    const contentKey = String(result.content || "")
       .trim()
-      .replace(/\s+/g, " ");
+      .replace(/\s+/g, " ")
+      .toLowerCase();
 
-    const duplicateKey = `${documentId}::${content}`;
+    const duplicateKey = `${documentKey}::${contentKey}`;
 
     if (seenChunks.has(duplicateKey)) {
-      console.log("Duplicate RAG chunk skipped:", result._id);
-
       continue;
     }
 
@@ -106,7 +167,6 @@ const buildContext = async (query, options = {}) => {
 
     uniqueResults.push(result);
 
-    // Stop after we have enough unique results
     if (uniqueResults.length >= limit) {
       break;
     }
@@ -117,7 +177,21 @@ const buildContext = async (query, options = {}) => {
   // ====================================================
 
   const context = uniqueResults
-    .map((result, index) => `[Source ${index + 1}]\n${result.content}`)
+    .map((result, index) => {
+      const content = String(result.content || "").trim();
+
+      if (!content) {
+        return "";
+      }
+
+      return [
+        `[Source ${index + 1}]`,
+        `Document ID: ${result.document || "unknown"}`,
+        `Chunk: ${result.chunkIndex ?? "unknown"}`,
+        content,
+      ].join("\n");
+    })
+    .filter(Boolean)
     .join("\n\n");
 
   // ====================================================
@@ -133,38 +207,40 @@ const buildContext = async (query, options = {}) => {
 
     chunkIndex: result.chunkIndex,
 
-    score: result.score,
+    score: Number(result.score),
   }));
 
   // ====================================================
-  // LOGGING
+  // BEST SCORE
+  // ====================================================
+
+  const bestScore =
+    rawResults.length > 0
+      ? Math.max(
+          ...rawResults
+            .map((result) => Number(result.score))
+            .filter(Number.isFinite),
+        )
+      : 0;
+
+  // ====================================================
+  // FINAL DEBUG
   // ====================================================
 
   console.log("==========================================");
-  console.log("RAG CONTEXT");
+  console.log("RAG CONTEXT RESULT");
   console.log("==========================================");
-
-  console.log("Query:", query);
-
-  console.log("Vector search results:", searchResult.results?.length || 0);
-
-  console.log("After score filtering:", filteredResults.length);
-
-  console.log("After deduplication:", uniqueResults.length);
-
-  console.log(
-    "Query embedding dimensions:",
-    searchResult.queryEmbeddingDimensions,
-  );
-
+  console.log("Question:", cleanQuery);
+  console.log("Raw results:", rawResults.length);
+  console.log("Filtered results:", filteredResults.length);
+  console.log("Unique results:", uniqueResults.length);
+  console.log("Best score:", bestScore);
+  console.log("Required score:", minScore);
+  console.log("Has context:", Boolean(context.trim()));
   console.log("==========================================");
-
-  // ====================================================
-  // RETURN
-  // ====================================================
 
   return {
-    query,
+    query: cleanQuery,
 
     context,
 
@@ -172,31 +248,85 @@ const buildContext = async (query, options = {}) => {
 
     retrievedChunks: uniqueResults.length,
 
-    queryEmbeddingDimensions: searchResult.queryEmbeddingDimensions,
+    queryEmbeddingDimensions: searchResult.queryEmbeddingDimensions || 0,
+
+    bestScore,
+
+    minScore,
+
+    results: uniqueResults,
+
+    rawResults,
   };
 };
 
 // ======================================================
-// GENERATE RAG ANSWER
+// CHECK RELEVANCE
+// ======================================================
+
+const hasRelevantContext = (ragContext) => {
+  if (!ragContext) {
+    return false;
+  }
+
+  if (!ragContext.context || !String(ragContext.context).trim()) {
+    return false;
+  }
+
+  if (!Array.isArray(ragContext.sources) || ragContext.sources.length === 0) {
+    return false;
+  }
+
+  const bestScore = Number(ragContext.bestScore);
+
+  const minScore = Number(ragContext.minScore);
+
+  if (!Number.isFinite(bestScore)) {
+    return false;
+  }
+
+  if (!Number.isFinite(minScore)) {
+    return false;
+  }
+
+  return bestScore >= minScore;
+};
+
+// ======================================================
+// ANSWER QUESTION
 // ======================================================
 
 const answerQuestion = async (query, options = {}) => {
+  const cleanQuery = String(query || "").trim();
+
+  if (!cleanQuery) {
+    throw new Error("Question is required");
+  }
+
   // ====================================================
   // BUILD CONTEXT
   // ====================================================
 
-  const ragContext = await buildContext(query, options);
+  const ragContext = await buildContext(cleanQuery, options);
 
   // ====================================================
-  // NO RELEVANT INFORMATION
+  // CHECK RELEVANCE
   // ====================================================
 
-  if (!ragContext.context || !ragContext.context.trim()) {
+  if (!hasRelevantContext(ragContext)) {
+    console.log("==========================================");
+    console.log("RAG: QUESTION OUT OF SCOPE");
+    console.log("==========================================");
+    console.log("Question:", cleanQuery);
+    console.log("Best score:", ragContext.bestScore);
+    console.log("Required:", ragContext.minScore);
+    console.log("Retrieved chunks:", ragContext.retrievedChunks);
+    console.log("==========================================");
+
     return {
-      query,
+      query: cleanQuery,
 
-      answer:
-        "I could not find relevant information in the provided documents.",
+      answer: OUT_OF_SCOPE_MESSAGE,
 
       context: "",
 
@@ -204,30 +334,57 @@ const answerQuestion = async (query, options = {}) => {
 
       retrievedChunks: 0,
 
-      queryEmbeddingDimensions: ragContext.queryEmbeddingDimensions,
+      queryEmbeddingDimensions: ragContext.queryEmbeddingDimensions || 0,
 
       model: null,
+
+      outOfScope: true,
+
+      bestScore: ragContext.bestScore || 0,
+
+      minScore: ragContext.minScore,
     };
   }
+
+  // ====================================================
+  // SEND DOCUMENT CONTEXT TO GEMINI
+  // ====================================================
+
+  console.log("==========================================");
+  console.log("SENDING DOCUMENT CONTEXT TO GEMINI");
+  console.log("==========================================");
+
+  console.log("Context length:", ragContext.context.length);
+
+  console.log("Sources:", ragContext.sources.length);
 
   // ====================================================
   // GENERATE ANSWER
   // ====================================================
 
   const llmResult = await llmService.generateRagAnswer({
-    question: query,
+    question: cleanQuery,
 
     context: ragContext.context,
   });
+
+  // ====================================================
+  // SAFETY FALLBACK
+  // ====================================================
+
+  const answer =
+    llmResult && llmResult.answer && String(llmResult.answer).trim()
+      ? String(llmResult.answer).trim()
+      : OUT_OF_SCOPE_MESSAGE;
 
   // ====================================================
   // RETURN
   // ====================================================
 
   return {
-    query,
+    query: cleanQuery,
 
-    answer: llmResult.answer,
+    answer,
 
     context: ragContext.context,
 
@@ -237,7 +394,13 @@ const answerQuestion = async (query, options = {}) => {
 
     queryEmbeddingDimensions: ragContext.queryEmbeddingDimensions,
 
-    model: llmResult.model,
+    model: llmResult?.model || null,
+
+    outOfScope: false,
+
+    bestScore: ragContext.bestScore,
+
+    minScore: ragContext.minScore,
   };
 };
 
@@ -248,4 +411,6 @@ const answerQuestion = async (query, options = {}) => {
 module.exports = {
   buildContext,
   answerQuestion,
+  hasRelevantContext,
+  OUT_OF_SCOPE_MESSAGE,
 };

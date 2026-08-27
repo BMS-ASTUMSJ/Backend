@@ -419,12 +419,72 @@ const renameChat = async (chatId, userId, title) => {
 // ======================================================
 // EXPORT
 // ======================================================
+// ======================================================
+// PUBLIC AI QUESTION
+// ======================================================
 
+const answerPublicQuestion = async ({
+  message,
+  limit = 5,
+  minScore = 0.5,
+  documentId = null,
+}) => {
+  // ====================================================
+  // VALIDATION
+  // ====================================================
+
+  if (!message || !String(message).trim()) {
+    throw new Error("Message is required");
+  }
+
+  const cleanMessage = String(message).trim();
+
+  // ====================================================
+  // RUN RAG
+  // ====================================================
+
+  console.log("==========================================");
+  console.log("PUBLIC AI REQUEST");
+  console.log("==========================================");
+
+  console.log("Question:", cleanMessage);
+
+  const ragResult = await ragService.answerQuestion(cleanMessage, {
+    limit:
+      Number.isFinite(Number(limit)) && Number(limit) > 0 ? Number(limit) : 5,
+
+    minScore:
+      minScore !== undefined && minScore !== null && minScore !== ""
+        ? Number(minScore)
+        : 0.5,
+
+    documentId: documentId || null,
+  });
+
+  // ====================================================
+  // RETURN
+  // ====================================================
+
+  return {
+    answer: ragResult.answer,
+
+    sources: ragResult.sources || [],
+
+    model: ragResult.model || null,
+
+    rag: {
+      retrievedChunks: ragResult.retrievedChunks,
+      queryEmbeddingDimensions: ragResult.queryEmbeddingDimensions,
+      sources: ragResult.sources || [],
+    },
+  };
+};
 module.exports = {
   createChat,
   getUserChats,
   getChatById,
   sendMessage,
+  answerPublicQuestion,
   deleteChat,
   renameChat,
 };

@@ -116,7 +116,7 @@ app.use("/api/attendance", attendanceRoutes);
 app.use("/api/documents", documentRoutes);
 app.use("/api/extraction", extractionRoutes);
 app.use("/api/rag", ragRoutes);
-app.use("/api/chats", chatRoutes);
+app.use("/api/chat", chatRoutes);
 app.post("/test/document", async (req, res) => {
   try {
     const document = await Document.create({

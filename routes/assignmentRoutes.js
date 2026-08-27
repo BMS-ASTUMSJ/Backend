@@ -20,7 +20,7 @@ const {
 
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
-const upload = require("../middleware/upload");
+const upload = require("../middleware/ragUpload");
 
 // ======================================================
 // NORMAL / ADMIN ASSIGNMENTS

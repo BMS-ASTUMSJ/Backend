@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+
 const Chunk = require("../models/chunk.model");
 const embeddingService = require("./embedding.service");
 
@@ -7,8 +9,44 @@ const embeddingService = require("./embedding.service");
 
 const VECTOR_INDEX_NAME = "vector_index";
 
-// Number of chunks to retrieve
 const DEFAULT_LIMIT = 5;
+const MAX_LIMIT = 20;
+
+// ======================================================
+// NORMALIZE LIMIT
+// ======================================================
+
+const normalizeLimit = (value) => {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_LIMIT;
+  }
+
+  return Math.min(Math.floor(parsed), MAX_LIMIT);
+};
+
+// ======================================================
+// NORMALIZE DOCUMENT ID
+// ======================================================
+
+const normalizeDocumentId = (documentId) => {
+  if (!documentId) {
+    return null;
+  }
+
+  if (documentId instanceof mongoose.Types.ObjectId) {
+    return documentId;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(documentId)) {
+    const error = new Error("Invalid document ID");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return new mongoose.Types.ObjectId(documentId);
+};
 
 // ======================================================
 // VECTOR SEARCH
@@ -16,72 +54,83 @@ const DEFAULT_LIMIT = 5;
 
 const searchSimilarChunks = async (query, options = {}) => {
   try {
-    // ================================================
+    // ==================================================
     // VALIDATE QUERY
-    // ================================================
+    // ==================================================
 
-    if (!query || !query.trim()) {
-      throw new Error("Search query is required");
+    if (!query || !String(query).trim()) {
+      const error = new Error("Search query is required");
+      error.statusCode = 400;
+      throw error;
     }
 
-    const limit = options.limit || DEFAULT_LIMIT;
+    const cleanQuery = String(query).trim();
 
-    const documentId = options.documentId || null;
+    const limit = normalizeLimit(options.limit);
+
+    const documentId = normalizeDocumentId(options.documentId);
+
+    // ==================================================
+    // LOG
+    // ==================================================
 
     console.log("==========================================");
-
     console.log("VECTOR SEARCH");
-
     console.log("==========================================");
 
-    console.log("Query:", query);
-
+    console.log("Query:", cleanQuery);
     console.log("Limit:", limit);
+    console.log("Document ID:", documentId || "ALL DOCUMENTS");
 
-    // ================================================
+    // ==================================================
     // CREATE QUERY EMBEDDING
-    // ================================================
+    // ==================================================
 
     console.log("Creating query embedding...");
 
-    const queryEmbedding = await embeddingService.createQueryEmbedding(query);
+    const queryEmbedding =
+      await embeddingService.createQueryEmbedding(cleanQuery);
+
+    if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
+      throw new Error("Failed to create query embedding");
+    }
 
     console.log("Query embedding dimensions:", queryEmbedding.length);
 
-    // ================================================
-    // BUILD VECTOR SEARCH
-    // ================================================
+    // ==================================================
+    // VECTOR SEARCH
+    // ==================================================
 
-    const vectorSearchStage = {
-      $vectorSearch: {
-        index: VECTOR_INDEX_NAME,
+    const vectorSearch = {
+      index: VECTOR_INDEX_NAME,
 
-        path: "embedding",
+      path: "embedding",
 
-        queryVector: queryEmbedding,
+      queryVector: queryEmbedding,
 
-        numCandidates: Math.max(limit * 10, 50),
+      numCandidates: Math.max(limit * 20, 100),
 
-        limit,
-      },
+      limit,
     };
 
-    // ================================================
-    // ADD DOCUMENT FILTER IF PROVIDED
-    // ================================================
+    // ==================================================
+    // DOCUMENT FILTER
+    // ==================================================
 
     if (documentId) {
-      vectorSearchStage.$vectorSearch.filter = {
-        document: typeof documentId === "string" ? documentId : documentId,
+      vectorSearch.filter = {
+        document: documentId,
       };
     }
 
-    // ================================================
-    // EXECUTE SEARCH
-    // ================================================
+    // ==================================================
+    // AGGREGATION
+    // ==================================================
 
     const results = await Chunk.aggregate([
-      vectorSearchStage,
+      {
+        $vectorSearch: vectorSearch,
+      },
 
       {
         $addFields: {
@@ -116,26 +165,22 @@ const searchSimilarChunks = async (query, options = {}) => {
       },
     ]);
 
+    // ==================================================
+    // LOG RESULTS
+    // ==================================================
+
     console.log("Search results:", results.length);
 
-    // ================================================
-    // LOG RESULTS
-    // ================================================
-
     results.forEach((result, index) => {
-      console.log(`Result ${index + 1}:`);
-
-      console.log("Score:", result.score);
-
-      console.log("Chunk:", result.chunkIndex);
-
-      console.log("Content:", result.content);
+      console.log(
+        `Result ${index + 1}: score=${result.score}, chunk=${result.chunkIndex}`,
+      );
     });
 
     console.log("==========================================");
 
     return {
-      query,
+      query: cleanQuery,
 
       queryEmbeddingDimensions: queryEmbedding.length,
 
@@ -145,19 +190,25 @@ const searchSimilarChunks = async (query, options = {}) => {
     };
   } catch (error) {
     console.error("==========================================");
-
     console.error("VECTOR SEARCH ERROR");
-
+    console.error("==========================================");
+    console.error(error);
     console.error("==========================================");
 
-    console.error(error);
+    if (error.statusCode) {
+      throw error;
+    }
 
-    throw new Error(`Vector search failed: ${error.message}`);
+    const wrappedError = new Error(`Vector search failed: ${error.message}`);
+
+    wrappedError.statusCode = 500;
+
+    throw wrappedError;
   }
 };
 
 // ======================================================
-// SEARCH DOCUMENT
+// SEARCH SINGLE DOCUMENT
 // ======================================================
 
 const searchDocument = async (documentId, query, limit = DEFAULT_LIMIT) => {
