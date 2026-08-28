@@ -17,12 +17,6 @@ const cleanText = (text) => {
     .trim();
 };
 
-/**
- * Split text into chunks.
- *
- * chunkSize = maximum approximate characters
- * overlap = characters repeated between chunks
- */
 const splitTextIntoChunks = (text, chunkSize = 1000, overlap = 150) => {
   const cleanedText = cleanText(text);
 
@@ -48,7 +42,6 @@ const splitTextIntoChunks = (text, chunkSize = 1000, overlap = 150) => {
   while (start < cleanedText.length) {
     let end = Math.min(start + chunkSize, cleanedText.length);
 
-    // Try to end on a natural boundary.
     if (end < cleanedText.length) {
       const paragraphBreak = cleanedText.lastIndexOf("\n\n", end);
 

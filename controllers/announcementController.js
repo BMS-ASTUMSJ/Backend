@@ -277,7 +277,7 @@ const updateAnnouncement = async (req, res) => {
     announcement.audience = audience;
 
     announcement.edited = true;
-    // updatedAt is automatically changed by timestamps:true
+
     await announcement.save();
 
     await announcement.populate("createdBy", "firstName lastName email role");

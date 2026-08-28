@@ -1,24 +1,12 @@
 const mongoose = require("mongoose");
 
-// ======================================================
-// DOCUMENT SCHEMA
-// ======================================================
-
 const documentSchema = new mongoose.Schema(
   {
-    // ====================================================
-    // BASIC INFORMATION
-    // ====================================================
-
     title: {
       type: String,
       required: true,
       trim: true,
     },
-
-    // ====================================================
-    // DOCUMENT TYPE
-    // ====================================================
 
     type: {
       type: String,
@@ -26,10 +14,6 @@ const documentSchema = new mongoose.Schema(
 
       enum: ["pdf", "docx", "txt", "text"],
     },
-
-    // ====================================================
-    // SOURCE
-    // ====================================================
 
     source: {
       type: String,
@@ -41,10 +25,6 @@ const documentSchema = new mongoose.Schema(
       default: "upload",
     },
 
-    // ====================================================
-    // PROCESSING STATUS
-    // ====================================================
-
     status: {
       type: String,
 
@@ -55,10 +35,6 @@ const documentSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ====================================================
-    // UPLOADED BY
-    // ====================================================
-
     uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,
 
@@ -68,10 +44,6 @@ const documentSchema = new mongoose.Schema(
 
       index: true,
     },
-
-    // ====================================================
-    // DUPLICATE HASH
-    // ====================================================
 
     fileHash: {
       type: String,
@@ -85,19 +57,11 @@ const documentSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // ====================================================
-    // EXTRACTED TEXT
-    // ====================================================
-
     rawContent: {
       type: String,
 
       default: null,
     },
-
-    // ====================================================
-    // ORIGINAL FILE INFORMATION
-    // ====================================================
 
     originalName: {
       type: String,
@@ -129,19 +93,11 @@ const documentSchema = new mongoose.Schema(
       default: 0,
     },
 
-    // ====================================================
-    // EXTRA METADATA
-    // ====================================================
-
     metadata: {
       type: mongoose.Schema.Types.Mixed,
 
       default: {},
     },
-
-    // ====================================================
-    // PROCESSING INFORMATION
-    // ====================================================
 
     processedAt: {
       type: Date,
@@ -161,16 +117,9 @@ const documentSchema = new mongoose.Schema(
   },
 );
 
-// ======================================================
-// INDEXES
-// ======================================================
-
 documentSchema.index({
   uploadedBy: 1,
   createdAt: -1,
 });
-// ======================================================
-// MODEL
-// ======================================================
 
 module.exports = mongoose.model("Document", documentSchema);

@@ -217,8 +217,6 @@ const createAssignment = async (req, res) => {
         message: "Maximum score must be greater than 0.",
       });
     }
-    // ACTIVE BATCH
-    // --------------------------------------------------
 
     const activeBatch = await getActiveBatch();
 

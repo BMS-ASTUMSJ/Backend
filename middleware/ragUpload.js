@@ -2,10 +2,6 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// ======================================================
-// RAG UPLOAD DIRECTORY
-// ======================================================
-
 const uploadDirectory = path.join(__dirname, "..", "uploads", "rag");
 
 if (!fs.existsSync(uploadDirectory)) {
@@ -14,15 +10,7 @@ if (!fs.existsSync(uploadDirectory)) {
   });
 }
 
-// ======================================================
-// ALLOWED EXTENSIONS
-// ======================================================
-
 const allowedExtensions = [".pdf", ".doc", ".docx", ".txt"];
-
-// ======================================================
-// STORAGE
-// ======================================================
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -40,10 +28,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// ======================================================
-// FILE FILTER
-// ======================================================
-
 const fileFilter = (req, file, cb) => {
   const extension = path.extname(file.originalname).toLowerCase();
 
@@ -58,10 +42,6 @@ const fileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-// ======================================================
-// MULTER INSTANCE
-// ======================================================
-
 const upload = multer({
   storage,
   fileFilter,
@@ -70,9 +50,5 @@ const upload = multer({
     fileSize: 20 * 1024 * 1024,
   },
 });
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = upload;

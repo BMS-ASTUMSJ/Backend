@@ -1,43 +1,21 @@
 const axios = require("axios");
 const Chunk = require("../models/chunk.model");
 
-// ======================================================
-// VOYAGE AI CONFIGURATION
-// ======================================================
-
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 
 const VOYAGE_EMBEDDING_URL = "https://api.voyageai.com/v1/embeddings";
 
 const EMBEDDING_MODEL = "voyage-4-lite";
 
-// ======================================================
-// BATCH / RETRY CONFIGURATION
-// ======================================================
-
-// Voyage is currently limiting your account to 3 requests/minute.
-// We therefore send many chunks in one request instead of
-// making one API request for every chunk.
-
 const EMBEDDING_BATCH_SIZE = 8;
 
-// Maximum number of retries after HTTP 429
 const MAX_RETRIES = 5;
 
-// Initial retry delay
 const INITIAL_RETRY_DELAY = 22000;
-
-// ======================================================
-// SLEEP HELPER
-// ======================================================
 
 const sleep = (ms) => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
-
-// ======================================================
-// CREATE EMBEDDING FOR ONE TEXT
-// ======================================================
 
 const createEmbedding = async (text, inputType = "document") => {
   if (!text || !String(text).trim()) {
@@ -75,10 +53,6 @@ const createEmbedding = async (text, inputType = "document") => {
         },
       );
 
-      // ==================================================
-      // VALIDATE RESPONSE
-      // ==================================================
-
       if (
         !response.data ||
         !Array.isArray(response.data.data) ||
@@ -106,10 +80,6 @@ const createEmbedding = async (text, inputType = "document") => {
         error.message ||
         "Unknown Voyage AI error";
 
-      // ==================================================
-      // RATE LIMIT
-      // ==================================================
-
       if (status === 429) {
         attempt++;
 
@@ -123,7 +93,6 @@ const createEmbedding = async (text, inputType = "document") => {
           );
         }
 
-        // Exponential backoff
         const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1);
 
         console.warn("==========================================");
@@ -138,10 +107,6 @@ const createEmbedding = async (text, inputType = "document") => {
         continue;
       }
 
-      // ==================================================
-      // OTHER VOYAGE API ERROR
-      // ==================================================
-
       console.error("==========================================");
       console.error("VOYAGE EMBEDDING ERROR");
       console.error("==========================================");
@@ -153,20 +118,12 @@ const createEmbedding = async (text, inputType = "document") => {
         throw new Error(`Voyage AI error ${status}: ${message}`);
       }
 
-      // ==================================================
-      // NETWORK ERROR
-      // ==================================================
-
       throw new Error(`Failed to generate embedding: ${message}`);
     }
   }
 
   throw new Error("Failed to generate embedding");
 };
-
-// ======================================================
-// CREATE EMBEDDINGS FOR MULTIPLE TEXTS
-// ======================================================
 
 const createBatchEmbeddings = async (texts, inputType = "document") => {
   if (!Array.isArray(texts) || texts.length === 0) {
@@ -210,10 +167,6 @@ const createBatchEmbeddings = async (texts, inputType = "document") => {
         },
       );
 
-      // ==================================================
-      // VALIDATE RESPONSE
-      // ==================================================
-
       if (!response.data || !Array.isArray(response.data.data)) {
         console.error("Invalid Voyage batch response:", response.data);
 
@@ -254,10 +207,6 @@ const createBatchEmbeddings = async (texts, inputType = "document") => {
         error.message ||
         "Unknown Voyage AI error";
 
-      // ==================================================
-      // RATE LIMIT
-      // ==================================================
-
       if (status === 429) {
         attempt++;
 
@@ -288,10 +237,6 @@ const createBatchEmbeddings = async (texts, inputType = "document") => {
         continue;
       }
 
-      // ==================================================
-      // OTHER API ERROR
-      // ==================================================
-
       console.error("==========================================");
       console.error("VOYAGE BATCH EMBEDDING ERROR");
       console.error("==========================================");
@@ -310,18 +255,10 @@ const createBatchEmbeddings = async (texts, inputType = "document") => {
   throw new Error("Failed to generate batch embeddings");
 };
 
-// ======================================================
-// EMBED ALL CHUNKS FOR A DOCUMENT
-// ======================================================
-
 const embedDocumentChunks = async (documentId) => {
   if (!documentId) {
     throw new Error("Document ID is required");
   }
-
-  // ==================================================
-  // FIND DOCUMENT CHUNKS
-  // ==================================================
 
   const chunks = await Chunk.find({
     document: documentId,
@@ -340,10 +277,6 @@ const embedDocumentChunks = async (documentId) => {
   let processed = 0;
   let dimensions = 0;
 
-  // ==================================================
-  // PROCESS IN BATCHES
-  // ==================================================
-
   for (let start = 0; start < chunks.length; start += EMBEDDING_BATCH_SIZE) {
     const batch = chunks.slice(start, start + EMBEDDING_BATCH_SIZE);
 
@@ -361,21 +294,9 @@ const embedDocumentChunks = async (documentId) => {
 
     console.log("==========================================");
 
-    // ==================================================
-    // GET TEXTS
-    // ==================================================
-
     const texts = batch.map((chunk) => chunk.content);
 
-    // ==================================================
-    // CREATE BATCH EMBEDDINGS
-    // ==================================================
-
     const embeddings = await createBatchEmbeddings(texts, "document");
-
-    // ==================================================
-    // SAVE EMBEDDINGS
-    // ==================================================
 
     for (let i = 0; i < batch.length; i++) {
       const chunk = batch[i];
@@ -395,16 +316,6 @@ const embedDocumentChunks = async (documentId) => {
 
     console.log(`Batch ${batchNumber}/${totalBatches} completed`);
 
-    // ==================================================
-    // RATE LIMIT PROTECTION
-    // ==================================================
-
-    // Your current Voyage account has a 3 RPM limit.
-    //
-    // Wait before making the next API request.
-    //
-    // 21 seconds gives us roughly <= 3 requests/minute.
-
     if (start + EMBEDDING_BATCH_SIZE < chunks.length) {
       console.log(
         "Waiting before next Voyage request to respect rate limit...",
@@ -413,10 +324,6 @@ const embedDocumentChunks = async (documentId) => {
       await sleep(22000);
     }
   }
-
-  // ==================================================
-  // COMPLETE
-  // ==================================================
 
   console.log("==========================================");
 
@@ -437,10 +344,6 @@ const embedDocumentChunks = async (documentId) => {
   };
 };
 
-// ======================================================
-// CREATE QUERY EMBEDDING
-// ======================================================
-
 const createQueryEmbedding = async (query) => {
   if (!query || !String(query).trim()) {
     throw new Error("Query cannot be empty");
@@ -448,10 +351,6 @@ const createQueryEmbedding = async (query) => {
 
   return createEmbedding(String(query).trim(), "query");
 };
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   createEmbedding,

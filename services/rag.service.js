@@ -1,39 +1,13 @@
 const retrievalService = require("./retrieval.service");
 const llmService = require("./llm.service");
 
-// ======================================================
-// CONFIGURATION
-// ======================================================
-
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 20;
-
-// ======================================================
-// OUT OF SCOPE MESSAGE
-// ======================================================
 
 const OUT_OF_SCOPE_MESSAGE =
   "I don't have information about that. I am only the ASTU MSJ Summer Bootcamp Assistant.";
 
-// ======================================================
-// IMPORTANT
-// ======================================================
-//
-// MongoDB Atlas vector search scores can vary depending on
-// the embedding model and similarity configuration.
-//
-// 0.7 was too strict for your current setup.
-//
-// Start with 0.30 and test the actual scores in your
-// backend console.
-//
-// ======================================================
-
 const DEFAULT_MIN_SCORE = 0.3;
-
-// ======================================================
-// NORMALIZE OPTIONS
-// ======================================================
 
 const normalizeOptions = (options = {}) => {
   const parsedLimit = Number(options.limit);
@@ -57,10 +31,6 @@ const normalizeOptions = (options = {}) => {
   };
 };
 
-// ======================================================
-// BUILD RAG CONTEXT
-// ======================================================
-
 const buildContext = async (query, options = {}) => {
   if (!query || !String(query).trim()) {
     throw new Error("Query is required");
@@ -69,10 +39,6 @@ const buildContext = async (query, options = {}) => {
   const cleanQuery = String(query).trim();
 
   const { limit, minScore, documentId } = normalizeOptions(options);
-
-  // ====================================================
-  // RETRIEVE MORE RESULTS THAN WE FINALLY USE
-  // ====================================================
 
   const searchLimit = Math.min(Math.max(limit * 4, limit), MAX_LIMIT);
 
@@ -84,10 +50,6 @@ const buildContext = async (query, options = {}) => {
   console.log("Final context limit:", limit);
   console.log("Minimum score:", minScore);
   console.log("Document:", documentId || "ALL PROCESSED DOCUMENTS");
-
-  // ====================================================
-  // VECTOR SEARCH
-  // ====================================================
 
   const searchResult = await retrievalService.searchSimilarChunks(cleanQuery, {
     limit: searchLimit,
@@ -122,10 +84,6 @@ const buildContext = async (query, options = {}) => {
     );
   });
 
-  // ====================================================
-  // FILTER RESULTS
-  // ====================================================
-
   const filteredResults = rawResults.filter((result) => {
     const score = Number(result.score);
 
@@ -140,10 +98,6 @@ const buildContext = async (query, options = {}) => {
   console.log("FILTERED RESULTS");
   console.log("==========================================");
   console.log("Relevant results:", filteredResults.length);
-
-  // ====================================================
-  // REMOVE DUPLICATES
-  // ====================================================
 
   const seenChunks = new Set();
 
@@ -172,10 +126,6 @@ const buildContext = async (query, options = {}) => {
     }
   }
 
-  // ====================================================
-  // BUILD CONTEXT
-  // ====================================================
-
   const context = uniqueResults
     .map((result, index) => {
       const content = String(result.content || "").trim();
@@ -194,10 +144,6 @@ const buildContext = async (query, options = {}) => {
     .filter(Boolean)
     .join("\n\n");
 
-  // ====================================================
-  // SOURCES
-  // ====================================================
-
   const sources = uniqueResults.map((result, index) => ({
     sourceNumber: index + 1,
 
@@ -210,10 +156,6 @@ const buildContext = async (query, options = {}) => {
     score: Number(result.score),
   }));
 
-  // ====================================================
-  // BEST SCORE
-  // ====================================================
-
   const bestScore =
     rawResults.length > 0
       ? Math.max(
@@ -222,10 +164,6 @@ const buildContext = async (query, options = {}) => {
             .filter(Number.isFinite),
         )
       : 0;
-
-  // ====================================================
-  // FINAL DEBUG
-  // ====================================================
 
   console.log("==========================================");
   console.log("RAG CONTEXT RESULT");
@@ -260,10 +198,6 @@ const buildContext = async (query, options = {}) => {
   };
 };
 
-// ======================================================
-// CHECK RELEVANCE
-// ======================================================
-
 const hasRelevantContext = (ragContext) => {
   if (!ragContext) {
     return false;
@@ -292,10 +226,6 @@ const hasRelevantContext = (ragContext) => {
   return bestScore >= minScore;
 };
 
-// ======================================================
-// ANSWER QUESTION
-// ======================================================
-
 const answerQuestion = async (query, options = {}) => {
   const cleanQuery = String(query || "").trim();
 
@@ -303,15 +233,7 @@ const answerQuestion = async (query, options = {}) => {
     throw new Error("Question is required");
   }
 
-  // ====================================================
-  // BUILD CONTEXT
-  // ====================================================
-
   const ragContext = await buildContext(cleanQuery, options);
-
-  // ====================================================
-  // CHECK RELEVANCE
-  // ====================================================
 
   if (!hasRelevantContext(ragContext)) {
     console.log("==========================================");
@@ -346,10 +268,6 @@ const answerQuestion = async (query, options = {}) => {
     };
   }
 
-  // ====================================================
-  // SEND DOCUMENT CONTEXT TO GEMINI
-  // ====================================================
-
   console.log("==========================================");
   console.log("SENDING DOCUMENT CONTEXT TO GEMINI");
   console.log("==========================================");
@@ -358,28 +276,16 @@ const answerQuestion = async (query, options = {}) => {
 
   console.log("Sources:", ragContext.sources.length);
 
-  // ====================================================
-  // GENERATE ANSWER
-  // ====================================================
-
   const llmResult = await llmService.generateRagAnswer({
     question: cleanQuery,
 
     context: ragContext.context,
   });
 
-  // ====================================================
-  // SAFETY FALLBACK
-  // ====================================================
-
   const answer =
     llmResult && llmResult.answer && String(llmResult.answer).trim()
       ? String(llmResult.answer).trim()
       : OUT_OF_SCOPE_MESSAGE;
-
-  // ====================================================
-  // RETURN
-  // ====================================================
 
   return {
     query: cleanQuery,
@@ -403,10 +309,6 @@ const answerQuestion = async (query, options = {}) => {
     minScore: ragContext.minScore,
   };
 };
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   buildContext,

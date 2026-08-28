@@ -1,19 +1,10 @@
 const ragService = require("../services/rag.service");
 
-// ======================================================
-// GET RAG CONTEXT
-// ======================================================
-
 const getRagContext = async (req, res) => {
   try {
-    // Accept both names for compatibility
     const { question, query, limit, minScore, documentId } = req.body;
 
     const userQuery = question || query;
-
-    // ==================================================
-    // VALIDATE QUERY
-    // ==================================================
 
     if (!userQuery || !userQuery.trim()) {
       return res.status(400).json({
@@ -22,17 +13,9 @@ const getRagContext = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // OPTIONS
-    // ==================================================
-
     const retrievalLimit = Number(limit) || 5;
 
     const minimumScore = minScore !== undefined ? Number(minScore) : 0;
-
-    // ==================================================
-    // BUILD RAG CONTEXT
-    // ==================================================
 
     const result = await ragService.buildContext(userQuery.trim(), {
       limit: retrievalLimit,
@@ -41,10 +24,6 @@ const getRagContext = async (req, res) => {
 
       documentId: documentId || null,
     });
-
-    // ==================================================
-    // RESPONSE
-    // ==================================================
 
     return res.status(200).json({
       success: true,
@@ -75,20 +54,11 @@ const getRagContext = async (req, res) => {
   }
 };
 
-// ======================================================
-// ASK RAG QUESTION
-// ======================================================
-
 const askRagQuestion = async (req, res) => {
   try {
-    // Accept both "question" and old "query"
     const { question, query, limit, minScore, documentId } = req.body;
 
     const userQuestion = question || query;
-
-    // ==================================================
-    // VALIDATE
-    // ==================================================
 
     if (!userQuestion || !userQuestion.trim()) {
       return res.status(400).json({
@@ -103,17 +73,9 @@ const askRagQuestion = async (req, res) => {
 
     console.log("Question:", userQuestion);
 
-    // ==================================================
-    // RAG OPTIONS
-    // ==================================================
-
     const retrievalLimit = Number(limit) || 5;
 
     const minimumScore = minScore !== undefined ? Number(minScore) : 0.5;
-
-    // ==================================================
-    // COMPLETE RAG PIPELINE
-    // ==================================================
 
     const result = await ragService.answerQuestion(userQuestion.trim(), {
       limit: retrievalLimit,
@@ -122,10 +84,6 @@ const askRagQuestion = async (req, res) => {
 
       documentId: documentId || null,
     });
-
-    // ==================================================
-    // RESPONSE
-    // ==================================================
 
     return res.status(200).json({
       success: true,
@@ -158,10 +116,6 @@ const askRagQuestion = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   getRagContext,

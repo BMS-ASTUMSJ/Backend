@@ -1,26 +1,14 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// ======================================================
-// CONFIGURATION
-// ======================================================
-
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const GEMINI_MODEL = "gemini-3.6-flash";
-
-// ======================================================
-// INITIALIZE GEMINI
-// ======================================================
 
 if (!GEMINI_API_KEY) {
   console.warn("WARNING: GEMINI_API_KEY is not configured");
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-// ======================================================
-// GENERATE RAG ANSWER
-// ======================================================
 
 const generateRagAnswer = async ({ question, context }) => {
   try {
@@ -44,17 +32,9 @@ const generateRagAnswer = async ({ question, context }) => {
 
     console.log("Question:", question);
 
-    // ================================================
-    // MODEL
-    // ================================================
-
     const model = genAI.getGenerativeModel({
       model: GEMINI_MODEL,
     });
-
-    // ================================================
-    // PROMPT
-    // ================================================
 
     const prompt = `
 You are the ASTU MSJ Summer Bootcamp Assistant.
@@ -81,10 +61,6 @@ ${question}
 
 ANSWER:
 `;
-
-    // ================================================
-    // GENERATE
-    // ================================================
 
     const result = await model.generateContent(prompt);
 
@@ -115,10 +91,6 @@ ANSWER:
     throw new Error(`Failed to generate RAG answer: ${error.message}`);
   }
 };
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   generateRagAnswer,

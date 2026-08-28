@@ -7,35 +7,17 @@ const fs = require("fs");
 const Document = require("../models/document.model");
 const Chunk = require("../models/chunk.model");
 
-/**
- * Extract text from an uploaded document,
- * clean it, create chunks, generate embeddings,
- * and save everything.
- */
 const extractDocumentText = async (req, res) => {
   let document = null;
 
   try {
-    // ==========================================
-    // CHECK UPLOADED FILE
-    // ==========================================
-
     if (!req.file) {
       return res.status(400).json({
         success: false,
         message: "Please upload a file",
       });
     }
-
-    // ==========================================
-    // READ FILE
-    // ==========================================
-
     const fileBuffer = fs.readFileSync(req.file.path);
-
-    // ==========================================
-    // GENERATE SHA-256 FILE HASH
-    // ==========================================
 
     const fileHash = crypto
       .createHash("sha256")
@@ -47,10 +29,6 @@ const extractDocumentText = async (req, res) => {
     console.log("==========================================");
     console.log("SHA-256:", fileHash);
     console.log("==========================================");
-
-    // ==========================================
-    // CHECK FOR DUPLICATE DOCUMENT
-    // ==========================================
 
     const existingDocument = await Document.findOne({
       fileHash,
@@ -64,10 +42,6 @@ const extractDocumentText = async (req, res) => {
       console.log("File hash:", fileHash);
       console.log("==========================================");
 
-      // ------------------------------------------
-      // DELETE NEWLY UPLOADED FILE
-      // ------------------------------------------
-
       try {
         if (req.file.path && fs.existsSync(req.file.path)) {
           fs.unlinkSync(req.file.path);
@@ -80,10 +54,6 @@ const extractDocumentText = async (req, res) => {
           fileDeleteError,
         );
       }
-
-      // ------------------------------------------
-      // RETURN EXISTING DOCUMENT
-      // ------------------------------------------
 
       return res.status(409).json({
         success: false,
@@ -106,10 +76,6 @@ const extractDocumentText = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // DETERMINE FILE TYPE
-    // ==========================================
-
     const extension = req.file.originalname.split(".").pop().toLowerCase();
 
     let documentType;
@@ -121,7 +87,6 @@ const extractDocumentText = async (req, res) => {
     } else if (extension === "txt") {
       documentType = "txt";
     } else {
-      // Delete unsupported uploaded file
       try {
         if (req.file.path && fs.existsSync(req.file.path)) {
           fs.unlinkSync(req.file.path);
@@ -136,10 +101,6 @@ const extractDocumentText = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // CREATE DOCUMENT
-    // ==========================================
-
     try {
       document = await Document.create({
         title: req.file.originalname,
@@ -152,7 +113,6 @@ const extractDocumentText = async (req, res) => {
 
         uploadedBy: req.user?._id || null,
 
-        // IMPORTANT
         fileHash,
 
         metadata: {
@@ -164,10 +124,6 @@ const extractDocumentText = async (req, res) => {
         },
       });
     } catch (createError) {
-      // ==========================================
-      // HANDLE MONGODB DUPLICATE KEY
-      // ==========================================
-
       if (createError.code === 11000) {
         console.log("Duplicate detected by MongoDB unique index.");
 
@@ -175,7 +131,6 @@ const extractDocumentText = async (req, res) => {
           fileHash,
         });
 
-        // Delete newly uploaded file
         try {
           if (req.file.path && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
@@ -214,10 +169,6 @@ const extractDocumentText = async (req, res) => {
 
     console.log("Document fileHash:", document.fileHash);
 
-    // ==========================================
-    // EXTRACT TEXT
-    // ==========================================
-
     console.log("==========================================");
     console.log("STARTING TEXT EXTRACTION");
     console.log("==========================================");
@@ -247,10 +198,6 @@ const extractDocumentText = async (req, res) => {
     }
 
     console.log("Extracted characters:", extractedText.length);
-
-    // ==========================================
-    // CLEAN TEXT
-    // ==========================================
 
     console.log("==========================================");
     console.log("CLEANING TEXT");
@@ -282,19 +229,11 @@ const extractDocumentText = async (req, res) => {
 
     console.log("Cleaned characters:", cleanedText.length);
 
-    // ==========================================
-    // SAVE RAW CONTENT
-    // ==========================================
-
     document.rawContent = cleanedText;
 
     await document.save();
 
     console.log("Raw content saved");
-
-    // ==========================================
-    // CREATE CHUNKS
-    // ==========================================
 
     console.log("==========================================");
     console.log("CREATING DOCUMENT CHUNKS");
@@ -333,10 +272,6 @@ const extractDocumentText = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // GENERATE EMBEDDINGS
-    // ==========================================
-
     console.log("==========================================");
     console.log("GENERATING EMBEDDINGS");
     console.log("==========================================");
@@ -346,10 +281,6 @@ const extractDocumentText = async (req, res) => {
     );
 
     console.log("Embedding result:", embeddingResult);
-
-    // ==========================================
-    // RELOAD CHUNKS AFTER EMBEDDINGS
-    // ==========================================
 
     const embeddedChunks = await Chunk.find({
       document: document._id,
@@ -363,10 +294,6 @@ const extractDocumentText = async (req, res) => {
       "First chunk embedding dimensions:",
       embeddedChunks[0]?.embedding?.length || 0,
     );
-
-    // ==========================================
-    // UPDATE DOCUMENT STATUS
-    // ==========================================
 
     document.status = "processed";
 
@@ -390,10 +317,6 @@ const extractDocumentText = async (req, res) => {
     console.log("DOCUMENT PROCESSING COMPLETED");
     console.log("==========================================");
 
-    // ==========================================
-    // RESPONSE
-    // ==========================================
-
     return res.status(200).json({
       success: true,
 
@@ -412,7 +335,6 @@ const extractDocumentText = async (req, res) => {
 
         uploadedBy: document.uploadedBy,
 
-        // IMPORTANT
         fileHash: document.fileHash,
 
         createdAt: document.createdAt,
@@ -447,10 +369,6 @@ const extractDocumentText = async (req, res) => {
       })),
     });
   } catch (error) {
-    // ==========================================
-    // ERROR HANDLING
-    // ==========================================
-
     console.error("==========================================");
 
     console.error("DOCUMENT PROCESSING ERROR");
@@ -458,10 +376,6 @@ const extractDocumentText = async (req, res) => {
     console.error("==========================================");
 
     console.error(error);
-
-    // ==========================================
-    // MARK DOCUMENT AS FAILED
-    // ==========================================
 
     if (document) {
       try {
@@ -481,10 +395,6 @@ const extractDocumentText = async (req, res) => {
       }
     }
 
-    // ==========================================
-    // RESPONSE
-    // ==========================================
-
     return res.status(500).json({
       success: false,
 
@@ -496,10 +406,6 @@ const extractDocumentText = async (req, res) => {
     });
   }
 };
-
-// ==========================================
-// EXPORT
-// ==========================================
 
 module.exports = {
   extractDocumentText,

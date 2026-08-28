@@ -4,10 +4,6 @@ const Chat = require("../models/chat.model");
 const ChatMessage = require("../models/chatMessage.model");
 const ragService = require("./rag.service");
 
-// ======================================================
-// CREATE CHAT
-// ======================================================
-
 const createChat = async (userId, title = "New Chat") => {
   if (!userId) {
     throw new Error("Authenticated user is required");
@@ -31,10 +27,6 @@ const createChat = async (userId, title = "New Chat") => {
   return chat;
 };
 
-// ======================================================
-// GET USER CHATS
-// ======================================================
-
 const getUserChats = async (userId) => {
   if (!userId) {
     throw new Error("Authenticated user is required");
@@ -57,10 +49,6 @@ const getUserChats = async (userId) => {
   return chats;
 };
 
-// ======================================================
-// GET SINGLE CHAT
-// ======================================================
-
 const getChatById = async (chatId, userId) => {
   if (!chatId) {
     throw new Error("Chat ID is required");
@@ -73,10 +61,6 @@ const getChatById = async (chatId, userId) => {
   if (!userId) {
     throw new Error("Authenticated user is required");
   }
-
-  // ====================================================
-  // FIND CHAT OWNED BY CURRENT USER
-  // ====================================================
 
   const chat = await Chat.findOne({
     _id: chatId,
@@ -94,10 +78,6 @@ const getChatById = async (chatId, userId) => {
     throw error;
   }
 
-  // ====================================================
-  // GET MESSAGES
-  // ====================================================
-
   const messages = await ChatMessage.find({
     chat: chatId,
     user: userId,
@@ -113,10 +93,6 @@ const getChatById = async (chatId, userId) => {
   };
 };
 
-// ======================================================
-// GENERATE CHAT TITLE
-// ======================================================
-
 const generateChatTitle = (message) => {
   if (!message) {
     return "New Chat";
@@ -128,20 +104,14 @@ const generateChatTitle = (message) => {
     return "New Chat";
   }
 
-  // Remove question mark and similar punctuation
   title = title.replace(/[?!.]+$/g, "");
 
-  // Maximum title length
   if (title.length > 60) {
     title = `${title.substring(0, 57)}...`;
   }
 
   return title;
 };
-
-// ======================================================
-// SEND MESSAGE
-// ======================================================
 
 const sendMessage = async ({
   chatId,
@@ -151,10 +121,6 @@ const sendMessage = async ({
   minScore = 0.5,
   documentId = null,
 }) => {
-  // ====================================================
-  // VALIDATION
-  // ====================================================
-
   if (!chatId) {
     throw new Error("Chat ID is required");
   }
@@ -177,10 +143,6 @@ const sendMessage = async ({
 
   const cleanMessage = String(message).trim();
 
-  // ====================================================
-  // FIND CHAT
-  // ====================================================
-
   const chat = await Chat.findOne({
     _id: chatId,
     user: userId,
@@ -197,17 +159,9 @@ const sendMessage = async ({
     throw error;
   }
 
-  // ====================================================
-  // CHECK WHETHER THIS IS FIRST MESSAGE
-  // ====================================================
-
   const existingMessageCount = await ChatMessage.countDocuments({
     chat: chatId,
   });
-
-  // ====================================================
-  // SAVE USER MESSAGE
-  // ====================================================
 
   const userMessage = await ChatMessage.create({
     chat: chatId,
@@ -217,10 +171,6 @@ const sendMessage = async ({
     sources: [],
     model: null,
   });
-
-  // ====================================================
-  // RUN RAG
-  // ====================================================
 
   console.log("==========================================");
   console.log("CHAT RAG REQUEST");
@@ -242,10 +192,6 @@ const sendMessage = async ({
     documentId: documentId || null,
   });
 
-  // ====================================================
-  // SAVE ASSISTANT MESSAGE
-  // ====================================================
-
   const assistantMessage = await ChatMessage.create({
     chat: chatId,
     user: userId,
@@ -261,22 +207,13 @@ const sendMessage = async ({
     model: ragResult.model || null,
   });
 
-  // ====================================================
-  // UPDATE CHAT
-  // ====================================================
-
   chat.lastMessageAt = new Date();
 
-  // Automatically name chat after first question
   if (existingMessageCount === 0 || !chat.title || chat.title === "New Chat") {
     chat.title = generateChatTitle(cleanMessage);
   }
 
   await chat.save();
-
-  // ====================================================
-  // RETURN
-  // ====================================================
 
   return {
     chat: {
@@ -302,10 +239,6 @@ const sendMessage = async ({
       createdAt: assistantMessage.createdAt,
     },
 
-    // ==================================================
-    // RAG INFORMATION
-    // ==================================================
-
     rag: {
       retrievedChunks: ragResult.retrievedChunks,
       queryEmbeddingDimensions: ragResult.queryEmbeddingDimensions,
@@ -313,10 +246,6 @@ const sendMessage = async ({
     },
   };
 };
-
-// ======================================================
-// DELETE CHAT
-// ======================================================
 
 const deleteChat = async (chatId, userId) => {
   if (!chatId) {
@@ -330,10 +259,6 @@ const deleteChat = async (chatId, userId) => {
   if (!userId) {
     throw new Error("Authenticated user is required");
   }
-
-  // ====================================================
-  // FIND OWNED CHAT
-  // ====================================================
 
   const chat = await Chat.findOne({
     _id: chatId,
@@ -350,17 +275,9 @@ const deleteChat = async (chatId, userId) => {
     throw error;
   }
 
-  // ====================================================
-  // DELETE ALL MESSAGES
-  // ====================================================
-
   await ChatMessage.deleteMany({
     chat: chatId,
   });
-
-  // ====================================================
-  // DELETE CHAT
-  // ====================================================
 
   await Chat.deleteOne({
     _id: chatId,
@@ -371,10 +288,6 @@ const deleteChat = async (chatId, userId) => {
     chatId,
   };
 };
-
-// ======================================================
-// RENAME CHAT
-// ======================================================
 
 const renameChat = async (chatId, userId, title) => {
   if (!chatId) {
@@ -416,32 +329,17 @@ const renameChat = async (chatId, userId, title) => {
   return chat;
 };
 
-// ======================================================
-// EXPORT
-// ======================================================
-// ======================================================
-// PUBLIC AI QUESTION
-// ======================================================
-
 const answerPublicQuestion = async ({
   message,
   limit = 5,
   minScore = 0.5,
   documentId = null,
 }) => {
-  // ====================================================
-  // VALIDATION
-  // ====================================================
-
   if (!message || !String(message).trim()) {
     throw new Error("Message is required");
   }
 
   const cleanMessage = String(message).trim();
-
-  // ====================================================
-  // RUN RAG
-  // ====================================================
 
   console.log("==========================================");
   console.log("PUBLIC AI REQUEST");
@@ -460,10 +358,6 @@ const answerPublicQuestion = async ({
 
     documentId: documentId || null,
   });
-
-  // ====================================================
-  // RETURN
-  // ====================================================
 
   return {
     answer: ragResult.answer,

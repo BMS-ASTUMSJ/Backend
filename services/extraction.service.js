@@ -2,19 +2,7 @@ const fs = require("fs");
 const { PDFParse } = require("pdf-parse");
 const mammoth = require("mammoth");
 
-/**
- * Extract text from uploaded files.
- *
- * Supported:
- * - PDF
- * - DOCX
- * - TXT
- */
 const extractTextFromFile = async (file) => {
-  // ==========================================
-  // VALIDATE FILE
-  // ==========================================
-
   if (!file) {
     throw new Error("No file was uploaded");
   }
@@ -27,7 +15,6 @@ const extractTextFromFile = async (file) => {
     throw new Error("Uploaded file name is missing");
   }
 
-  // Get file extension
   const extension = file.originalname.split(".").pop().toLowerCase();
 
   console.log("==========================================");
@@ -36,10 +23,6 @@ const extractTextFromFile = async (file) => {
   console.log("File path:", file.path);
   console.log("File type:", extension);
   console.log("==========================================");
-
-  // ==========================================
-  // PDF
-  // ==========================================
 
   if (extension === "pdf") {
     console.log("Extracting text from PDF...");
@@ -53,7 +36,6 @@ const extractTextFromFile = async (file) => {
     let parser;
 
     try {
-      // pdf-parse v2.x API
       parser = new PDFParse({
         data: dataBuffer,
       });
@@ -75,7 +57,6 @@ const extractTextFromFile = async (file) => {
 
       throw new Error(`Failed to extract PDF text: ${error.message}`);
     } finally {
-      // Always release parser resources
       if (parser) {
         try {
           await parser.destroy();
@@ -85,10 +66,6 @@ const extractTextFromFile = async (file) => {
       }
     }
   }
-
-  // ==========================================
-  // DOCX
-  // ==========================================
 
   if (extension === "docx") {
     console.log("Extracting text from DOCX...");
@@ -107,7 +84,6 @@ const extractTextFromFile = async (file) => {
         console.warn("DOCX extraction completed, but no text was found.");
       }
 
-      // Mammoth may return warnings
       if (result.messages && result.messages.length > 0) {
         console.log("DOCX extraction messages:", result.messages);
       }
@@ -119,10 +95,6 @@ const extractTextFromFile = async (file) => {
       throw new Error(`Failed to extract DOCX text: ${error.message}`);
     }
   }
-
-  // ==========================================
-  // TXT
-  // ==========================================
 
   if (extension === "txt") {
     console.log("Extracting text from TXT...");
@@ -142,18 +114,10 @@ const extractTextFromFile = async (file) => {
     }
   }
 
-  // ==========================================
-  // UNSUPPORTED FILE TYPE
-  // ==========================================
-
   throw new Error(
     `Unsupported file type: ${extension}. Supported file types are PDF, DOCX, and TXT.`,
   );
 };
-
-// ==========================================
-// EXPORT
-// ==========================================
 
 module.exports = {
   extractTextFromFile,

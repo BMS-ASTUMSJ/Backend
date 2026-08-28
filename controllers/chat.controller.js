@@ -1,23 +1,14 @@
 const chatService = require("../services/chat.service");
 
-// ======================================================
-// HELPER: GET AUTHENTICATED USER ID
-// ======================================================
-
 const getUserId = (req) => {
-  // Your protect middleware sets:
-  // req.user = user
-
   if (!req.user) {
     return null;
   }
 
-  // Mongoose document
   if (req.user._id) {
     return req.user._id.toString();
   }
 
-  // Fallback if req.user is a plain object
   if (req.user.id) {
     return req.user.id.toString();
   }
@@ -28,11 +19,6 @@ const getUserId = (req) => {
 
   return null;
 };
-
-// ======================================================
-// CREATE NEW CHAT
-// POST /api/chats
-// ======================================================
 
 const createChat = async (req, res) => {
   try {
@@ -70,11 +56,6 @@ const createChat = async (req, res) => {
   }
 };
 
-// ======================================================
-// GET ALL USER CHATS
-// GET /api/chats
-// ======================================================
-
 const getUserChats = async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -107,11 +88,6 @@ const getUserChats = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// GET SINGLE CHAT
-// GET /api/chats/:chatId
-// ======================================================
 
 const getChatById = async (req, res) => {
   try {
@@ -148,11 +124,6 @@ const getChatById = async (req, res) => {
   }
 };
 
-// ======================================================
-// SEND MESSAGE
-// POST /api/chats/:chatId/messages
-// ======================================================
-
 const sendMessage = async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -160,7 +131,6 @@ const sendMessage = async (req, res) => {
 
     const { message, question, limit, minScore, documentId } = req.body;
 
-    // Accept either "message" or "question"
     const userMessage = message || question;
 
     console.log("==========================================");
@@ -219,11 +189,6 @@ const sendMessage = async (req, res) => {
   }
 };
 
-// ======================================================
-// DELETE CHAT
-// DELETE /api/chats/:chatId
-// ======================================================
-
 const deleteChat = async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -258,11 +223,6 @@ const deleteChat = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// RENAME CHAT
-// PATCH /api/chats/:chatId
-// ======================================================
 
 const renameChat = async (req, res) => {
   try {
@@ -311,13 +271,6 @@ const renameChat = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// EXPORT
-// ======================================================
-// ======================================================
-// PUBLIC AI QUESTION
-// ======================================================
 
 const answerPublicQuestion = async (req, res) => {
   try {

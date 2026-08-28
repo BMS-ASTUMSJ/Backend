@@ -8,9 +8,6 @@ const mammoth = require("mammoth");
 const Document = require("../models/document.model");
 const Chunk = require("../models/chunk.model");
 const embeddingService = require("./embedding.service");
-// ============================================================
-// HASH CONTENT
-// ============================================================
 
 const generateFileHash = (content) => {
   return crypto
@@ -18,10 +15,6 @@ const generateFileHash = (content) => {
     .update(String(content), "utf8")
     .digest("hex");
 };
-
-// ============================================================
-// VALIDATE DOCUMENT ID
-// ============================================================
 
 const validateDocumentId = (documentId) => {
   if (!documentId) {
@@ -37,10 +30,6 @@ const validateDocumentId = (documentId) => {
   }
 };
 
-// ============================================================
-// NORMALIZE CONTENT
-// ============================================================
-
 const normalizeContent = (content) => {
   if (content === undefined || content === null) {
     return "";
@@ -52,10 +41,6 @@ const normalizeContent = (content) => {
     .replace(/\u0000/g, "")
     .trim();
 };
-
-// ============================================================
-// CREATE TEXT CHUNKS
-// ============================================================
 
 const createTextChunks = ({ content, chunkSize = 1200, overlap = 200 }) => {
   const text = normalizeContent(content);
@@ -81,7 +66,6 @@ const createTextChunks = ({ content, chunkSize = 1200, overlap = 200 }) => {
   while (start < text.length) {
     let end = Math.min(start + chunkSize, text.length);
 
-    // Try not to split words
     if (end < text.length) {
       const lastSpace = text.lastIndexOf(" ", end);
 
@@ -116,10 +100,6 @@ const createTextChunks = ({ content, chunkSize = 1200, overlap = 200 }) => {
   return chunks;
 };
 
-// ============================================================
-// EXTRACT PDF
-// ============================================================
-
 const extractPdfText = async (filePath) => {
   const buffer = await fs.promises.readFile(filePath);
 
@@ -127,10 +107,6 @@ const extractPdfText = async (filePath) => {
 
   return normalizeContent(result.text);
 };
-
-// ============================================================
-// EXTRACT DOCX
-// ============================================================
 
 const extractDocxText = async (filePath) => {
   const buffer = await fs.promises.readFile(filePath);
@@ -142,19 +118,11 @@ const extractDocxText = async (filePath) => {
   return normalizeContent(result.value);
 };
 
-// ============================================================
-// EXTRACT TXT
-// ============================================================
-
 const extractTxtText = async (filePath) => {
   const buffer = await fs.promises.readFile(filePath);
 
   return normalizeContent(buffer.toString("utf8"));
 };
-
-// ============================================================
-// EXTRACT FILE CONTENT
-// ============================================================
 
 const extractFileContent = async ({ filePath, extension }) => {
   const ext = String(extension || "").toLowerCase();
@@ -175,10 +143,6 @@ const extractFileContent = async ({ filePath, extension }) => {
     "Unsupported file type. Only PDF, DOCX, and TXT files are allowed.",
   );
 };
-
-// ============================================================
-// CREATE TEXT DOCUMENT
-// ============================================================
 
 const createTextDocument = async ({
   title,
@@ -205,10 +169,6 @@ const createTextDocument = async ({
 
   const fileHash = generateFileHash(cleanContent);
 
-  // ==========================================================
-  // DUPLICATE CHECK
-  // ==========================================================
-
   const existingDocument = await Document.findOne({
     fileHash,
   });
@@ -222,10 +182,6 @@ const createTextDocument = async ({
 
     throw error;
   }
-
-  // ==========================================================
-  // CREATE
-  // ==========================================================
 
   const document = await Document.create({
     title: cleanTitle,
@@ -270,10 +226,6 @@ const createTextDocument = async ({
   }
 };
 
-// ============================================================
-// UPLOAD DOCUMENT
-// ============================================================
-
 const uploadDocument = async ({
   file,
   title,
@@ -315,10 +267,6 @@ const uploadDocument = async ({
   let extractedContent = "";
 
   try {
-    // ========================================================
-    // EXTRACT CONTENT
-    // ========================================================
-
     extractedContent = await extractFileContent({
       filePath: file.path,
 
@@ -327,7 +275,6 @@ const uploadDocument = async ({
   } catch (error) {
     console.error("Document extraction error:", error);
 
-    // Delete unusable uploaded file
     await safeDeleteFile(file.path);
 
     const extractionError = new Error(
@@ -349,15 +296,7 @@ const uploadDocument = async ({
     throw error;
   }
 
-  // ========================================================
-  // HASH EXTRACTED CONTENT
-  // ========================================================
-
   const fileHash = generateFileHash(extractedContent);
-
-  // ========================================================
-  // DUPLICATE CHECK
-  // ========================================================
 
   const existingDocument = await Document.findOne({
     fileHash,
@@ -375,10 +314,6 @@ const uploadDocument = async ({
     throw error;
   }
 
-  // ========================================================
-  // DEFAULT TITLE
-  // ========================================================
-
   const defaultTitle = path.basename(file.originalname, extension);
 
   const cleanTitle = String(title || defaultTitle).trim();
@@ -388,10 +323,6 @@ const uploadDocument = async ({
 
     throw new Error("Document title is required");
   }
-
-  // ========================================================
-  // CREATE DATABASE RECORD
-  // ========================================================
 
   const document = await Document.create({
     title: cleanTitle,
@@ -431,10 +362,6 @@ const uploadDocument = async ({
     },
   });
 
-  // ========================================================
-  // PROCESS
-  // ========================================================
-
   try {
     const result = await rebuildDocumentChunks(document._id);
 
@@ -466,10 +393,6 @@ const uploadDocument = async ({
   }
 };
 
-// ============================================================
-// LIST DOCUMENTS
-// ============================================================
-
 const getDocuments = async (userId = null) => {
   const query = {};
 
@@ -488,10 +411,6 @@ const getDocuments = async (userId = null) => {
     })
     .lean();
 };
-
-// ============================================================
-// GET ONE DOCUMENT
-// ============================================================
 
 const getDocumentById = async (documentId, userId = null) => {
   validateDocumentId(documentId);
@@ -520,10 +439,6 @@ const getDocumentById = async (documentId, userId = null) => {
 
   return document;
 };
-
-// ============================================================
-// REBUILD CHUNKS
-// ============================================================
 
 const rebuildDocumentChunks = async (documentId) => {
   validateDocumentId(documentId);
@@ -556,17 +471,9 @@ const rebuildDocumentChunks = async (documentId) => {
     throw new Error("No chunks could be created");
   }
 
-  // ==========================================================
-  // DELETE OLD CHUNKS
-  // ==========================================================
-
   await Chunk.deleteMany({
     document: document._id,
   });
-
-  // ==========================================================
-  // CREATE NEW CHUNKS
-  // ==========================================================
 
   const chunkDocuments = chunks.map((chunk) => ({
     document: document._id,
@@ -583,10 +490,6 @@ const rebuildDocumentChunks = async (documentId) => {
   }));
 
   await Chunk.insertMany(chunkDocuments);
-
-  // ==========================================================
-  // GENERATE EMBEDDINGS FOR THE NEW CHUNKS
-  // ==========================================================
 
   console.log("==========================================");
   console.log("EMBEDDING NEW CHUNKS");
@@ -605,10 +508,6 @@ const rebuildDocumentChunks = async (documentId) => {
     chunksEmbedded: embedResult.processedChunks,
   };
 };
-
-// ============================================================
-// UPDATE DOCUMENT
-// ============================================================
 
 const updateDocument = async ({
   documentId,
@@ -658,10 +557,6 @@ const updateDocument = async ({
 
   const newHash = generateFileHash(cleanContent);
 
-  // ==========================================================
-  // DUPLICATE CHECK
-  // ==========================================================
-
   if (newHash !== document.fileHash) {
     const duplicate = await Document.findOne({
       fileHash: newHash,
@@ -682,10 +577,6 @@ const updateDocument = async ({
     }
   }
 
-  // ==========================================================
-  // UPDATE
-  // ==========================================================
-
   document.title = cleanTitle;
 
   document.rawContent = cleanContent;
@@ -697,10 +588,6 @@ const updateDocument = async ({
   document.processingError = null;
 
   await document.save();
-
-  // ==========================================================
-  // REPROCESS
-  // ==========================================================
 
   try {
     await rebuildDocumentChunks(document._id);
@@ -724,10 +611,6 @@ const updateDocument = async ({
     throw error;
   }
 };
-
-// ============================================================
-// REPROCESS DOCUMENT
-// ============================================================
 
 const reprocessDocument = async ({ documentId, userId = null }) => {
   validateDocumentId(documentId);
@@ -791,10 +674,6 @@ const reprocessDocument = async ({ documentId, userId = null }) => {
   }
 };
 
-// ============================================================
-// SAFE DELETE FILE
-// ============================================================
-
 const safeDeleteFile = async (filePath) => {
   if (!filePath) {
     return;
@@ -808,10 +687,6 @@ const safeDeleteFile = async (filePath) => {
     }
   }
 };
-
-// ============================================================
-// DELETE DOCUMENT
-// ============================================================
 
 const deleteDocument = async ({ documentId, userId = null }) => {
   validateDocumentId(documentId);
@@ -840,25 +715,13 @@ const deleteDocument = async ({ documentId, userId = null }) => {
     throw error;
   }
 
-  // ==========================================================
-  // DELETE RAG CHUNKS
-  // ==========================================================
-
   const chunkDeleteResult = await Chunk.deleteMany({
     document: document._id,
   });
 
-  // ==========================================================
-  // DELETE PHYSICAL FILE
-  // ==========================================================
-
   if (document.filePath) {
     await safeDeleteFile(document.filePath);
   }
-
-  // ==========================================================
-  // DELETE DATABASE DOCUMENT
-  // ==========================================================
 
   await Document.deleteOne({
     _id: document._id,
@@ -870,10 +733,6 @@ const deleteDocument = async ({ documentId, userId = null }) => {
     chunksDeleted: chunkDeleteResult.deletedCount || 0,
   };
 };
-
-// ============================================================
-// EXPORT
-// ============================================================
 
 module.exports = {
   createTextDocument,
