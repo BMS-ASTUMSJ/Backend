@@ -6,6 +6,10 @@ const Team = require("../models/team");
 const User = require("../models/user");
 const Batch = require("../models/batch");
 
+// ================================================================
+// RISK SERVICE
+// ================================================================
+
 let calculateStudentRisk = null;
 
 try {
@@ -13,8 +17,14 @@ try {
 
   calculateStudentRisk = riskService.calculateStudentRisk || riskService;
 } catch (error) {
+  console.warn("At-risk service could not be loaded:", error.message);
+
   calculateStudentRisk = null;
 }
+
+// ================================================================
+// CONSTANTS
+// ================================================================
 
 const VALID_STATUSES = ["Present", "Absent", "Late", "Excused"];
 
@@ -42,7 +52,13 @@ const TEAM_SESSION_TYPES = [
   "Team Meeting",
 ];
 
+// This is the value stored in the Session model for automatically
+// created team-meeting sessions.
 const TEAM_SESSION_MODEL_TYPE = "Daily Standup";
+
+// ================================================================
+// ATTENDANCE WEIGHT
+// ================================================================
 
 const getAttendanceWeight = (status) => {
   switch (status) {
@@ -63,6 +79,10 @@ const getAttendanceWeight = (status) => {
   }
 };
 
+// ================================================================
+// CALCULATE ATTENDANCE CHECKS
+// ================================================================
+
 const calculateChecks = (records = []) => {
   let earnedPoints = 0;
   let applicableChecks = 0;
@@ -81,19 +101,25 @@ const calculateChecks = (records = []) => {
       }
 
       const status = check.status;
-
       const weight = getAttendanceWeight(status);
 
       if (status === "Present") {
         presentChecks++;
-      } else if (status === "Absent") {
+      }
+
+      if (status === "Absent") {
         absentChecks++;
-      } else if (status === "Late") {
+      }
+
+      if (status === "Late") {
         lateChecks++;
-      } else if (status === "Excused") {
+      }
+
+      if (status === "Excused") {
         excusedChecks++;
       }
 
+      // Excused attendance is excluded from the denominator.
       if (weight === null) {
         return;
       }
@@ -125,6 +151,10 @@ const calculateChecks = (records = []) => {
   };
 };
 
+// ================================================================
+// OVERALL STATUS
+// ================================================================
+
 const calculateOverallStatus = (firstStatus, secondStatus) => {
   const statuses = [firstStatus, secondStatus].filter(Boolean);
 
@@ -151,11 +181,60 @@ const calculateOverallStatus = (firstStatus, secondStatus) => {
   return "Not Marked";
 };
 
+// ================================================================
+// FIND MENTOR TEAM
+// ================================================================
+
 const findMentorTeam = async (mentorId) => {
   return Team.findOne({
     mentors: mentorId,
   });
 };
+
+// ================================================================
+// CHECK STUDENT BELONGS TO TEAM
+// ================================================================
+
+const studentBelongsToTeam = (team, studentId) => {
+  if (!team) {
+    return false;
+  }
+
+  if (!Array.isArray(team.students)) {
+    return false;
+  }
+
+  return team.students.some((student) => {
+    const id = student?._id || student;
+
+    return String(id) === String(studentId);
+  });
+};
+
+// ================================================================
+// NORMALIZE TEAM MEETING TYPE
+// ================================================================
+
+const normalizeMeetingType = (meetingType, dayName) => {
+  let resolvedMeetingType =
+    meetingType ||
+    (dayName === "Sunday" ? "Sunday Weekly Meeting" : "Daily Meeting");
+
+  // Backward compatibility
+  if (resolvedMeetingType === "Sunday Meeting") {
+    resolvedMeetingType = "Sunday Weekly Meeting";
+  }
+
+  if (resolvedMeetingType === "Daily Standup") {
+    resolvedMeetingType = "Daily Meeting";
+  }
+
+  return resolvedMeetingType;
+};
+
+// ================================================================
+// CREATE / GET TEAM MEETING SESSION
+// ================================================================
 
 const getOrCreateTeamMeetingSession = async ({
   team,
@@ -170,27 +249,22 @@ const getOrCreateTeamMeetingSession = async ({
 
   const now = new Date();
 
-  const sessionDate = now;
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
 
   const sessionName = `${meetingType} - ${dayName}`;
 
-  const startOfDay = new Date(sessionDate);
-
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const endOfDay = new Date(sessionDate);
-
-  endOfDay.setHours(23, 59, 59, 999);
-
+  // Automatically-created team sessions use
+  // "Daily Standup" in the Session model for
+  // backward compatibility.
   let session = await Session.findOne({
     batch: team.batch,
-
     week,
-
     type: TEAM_SESSION_MODEL_TYPE,
-
     name: sessionName,
-
     date: {
       $gte: startOfDay,
       $lte: endOfDay,
@@ -210,7 +284,7 @@ const getOrCreateTeamMeetingSession = async ({
 
     name: sessionName,
 
-    date: sessionDate,
+    date: now,
 
     createdBy: mentorId,
 
@@ -220,9 +294,20 @@ const getOrCreateTeamMeetingSession = async ({
   return session;
 };
 
+// ================================================================
+// MARK BULK ATTENDANCE
+// ================================================================
+
 const markBulkAttendance = async (req, res) => {
   try {
+    const { sessionId, week, dayName, meetingType, attendanceList } = req.body;
+
     const mentorId = req.user?._id;
+    const mentorGender = req.user?.gender;
+
+    // ============================================================
+    // AUTH
+    // ============================================================
 
     if (!mentorId) {
       return res.status(401).json({
@@ -231,7 +316,9 @@ const markBulkAttendance = async (req, res) => {
       });
     }
 
-    const { sessionId, week, dayName, meetingType, attendanceList } = req.body;
+    // ============================================================
+    // VALIDATE ATTENDANCE LIST
+    // ============================================================
 
     if (!Array.isArray(attendanceList) || attendanceList.length === 0) {
       return res.status(400).json({
@@ -240,9 +327,11 @@ const markBulkAttendance = async (req, res) => {
       });
     }
 
-    const team = await Team.findOne({
-      mentors: mentorId,
-    });
+    // ============================================================
+    // FIND MENTOR TEAM
+    // ============================================================
+
+    const team = await findMentorTeam(mentorId);
 
     if (!team) {
       return res.status(404).json({
@@ -258,23 +347,31 @@ const markBulkAttendance = async (req, res) => {
       });
     }
 
-    if (!req.user.gender) {
+    if (!mentorGender) {
       return res.status(403).json({
         success: false,
         message: "Mentor gender information is required",
       });
     }
 
-    const studentIds = attendanceList.map((item) => item.studentId);
+    // ============================================================
+    // VALIDATE STUDENT IDS
+    // ============================================================
+
+    const studentIds = attendanceList.map((item) => item?.studentId);
 
     for (const studentId of studentIds) {
-      if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
         return res.status(400).json({
           success: false,
           message: `Invalid student ID: ${studentId}`,
         });
       }
     }
+
+    // ============================================================
+    // LOAD STUDENTS
+    // ============================================================
 
     const students = await User.find({
       _id: {
@@ -288,8 +385,12 @@ const markBulkAttendance = async (req, res) => {
     );
 
     const teamStudentIds = new Set(
-      (team.students || []).map((id) => String(id)),
+      (team.students || []).map((student) => String(student?._id || student)),
     );
+
+    // ============================================================
+    // MAIN COHORT SESSION
+    // ============================================================
 
     if (sessionId) {
       if (!mongoose.Types.ObjectId.isValid(sessionId)) {
@@ -324,31 +425,47 @@ const markBulkAttendance = async (req, res) => {
 
       const savedRecords = [];
 
-      for (const item of attendanceList) {
-        const studentId = String(item.studentId);
+      // ----------------------------------------------------------
+      // PROCESS EACH STUDENT
+      // ----------------------------------------------------------
 
-        const student = studentMap.get(studentId);
+      for (const item of attendanceList) {
+        const currentStudentId = String(item.studentId);
+
+        const student = studentMap.get(currentStudentId);
 
         if (!student) {
           return res.status(404).json({
             success: false,
-            message: `Student not found: ${studentId}`,
+            message: `Student not found: ${currentStudentId}`,
           });
         }
 
-        if (!teamStudentIds.has(studentId)) {
+        // --------------------------------------------------------
+        // TEAM SECURITY
+        // --------------------------------------------------------
+
+        if (!teamStudentIds.has(currentStudentId)) {
           return res.status(403).json({
             success: false,
             message: `${student.firstName} ${student.lastName} is not assigned to your team`,
           });
         }
 
-        if (student.gender !== req.user.gender) {
+        // --------------------------------------------------------
+        // GENDER SECURITY
+        // --------------------------------------------------------
+
+        if (student.gender !== mentorGender) {
           return res.status(403).json({
             success: false,
             message: `You cannot mark attendance for ${student.firstName} ${student.lastName}`,
           });
         }
+
+        // --------------------------------------------------------
+        // BATCH SECURITY
+        // --------------------------------------------------------
 
         if (String(student.batch) !== String(session.batch)) {
           return res.status(403).json({
@@ -356,6 +473,10 @@ const markBulkAttendance = async (req, res) => {
             message: `Student ${student.firstName} does not belong to this session's batch`,
           });
         }
+
+        // --------------------------------------------------------
+        // STATUS
+        // --------------------------------------------------------
 
         const firstStatus = item.firstCheck || "Present";
 
@@ -375,6 +496,10 @@ const markBulkAttendance = async (req, res) => {
           });
         }
 
+        // --------------------------------------------------------
+        // FIND EXISTING RECORD
+        // --------------------------------------------------------
+
         const now = new Date();
 
         let record = await Attendance.findOne({
@@ -385,8 +510,18 @@ const markBulkAttendance = async (req, res) => {
           sessionId: session._id,
         });
 
+        // --------------------------------------------------------
+        // UPDATE EXISTING
+        // --------------------------------------------------------
+
         if (record) {
+          record.studentId = student._id;
+
           record.batchId = session.batch;
+
+          record.teamId = team._id;
+
+          record.sessionId = session._id;
 
           record.week = session.week;
 
@@ -398,24 +533,27 @@ const markBulkAttendance = async (req, res) => {
 
           record.gender = student.gender;
 
+          record.status = calculateOverallStatus(firstStatus, secondStatus);
+
           record.firstCheck = {
             status: firstStatus,
-
             markedBy: mentorId,
-
             timestamp: now,
           };
 
           record.secondCheck = {
             status: secondStatus,
-
             markedBy: mentorId,
-
             timestamp: now,
           };
 
           await record.save();
-        } else {
+        }
+
+        // --------------------------------------------------------
+        // CREATE NEW
+        // --------------------------------------------------------
+        else {
           record = await Attendance.create({
             studentId: student._id,
 
@@ -435,19 +573,17 @@ const markBulkAttendance = async (req, res) => {
 
             gender: student.gender,
 
+            status: calculateOverallStatus(firstStatus, secondStatus),
+
             firstCheck: {
               status: firstStatus,
-
               markedBy: mentorId,
-
               timestamp: now,
             },
 
             secondCheck: {
               status: secondStatus,
-
               markedBy: mentorId,
-
               timestamp: now,
             },
           });
@@ -456,10 +592,18 @@ const markBulkAttendance = async (req, res) => {
         savedRecords.push(record);
       }
 
+      // ==========================================================
+      // RISK CALCULATION
+      // ==========================================================
+
       if (calculateStudentRisk && typeof calculateStudentRisk === "function") {
         await Promise.all(
           students.map((student) =>
-            calculateStudentRisk(student._id, session.batch),
+            calculateStudentRisk(student._id, session.batch).catch(
+              (riskError) => {
+                console.error("Risk calculation failed:", riskError.message);
+              },
+            ),
           ),
         );
       }
@@ -474,6 +618,10 @@ const markBulkAttendance = async (req, res) => {
         sessionId: session._id,
       });
     }
+
+    // ============================================================
+    // TEAM MEETING
+    // ============================================================
 
     if (week === undefined || week === null || !dayName) {
       return res.status(400).json({
@@ -498,25 +646,9 @@ const markBulkAttendance = async (req, res) => {
       });
     }
 
-    let resolvedMeetingType =
-      meetingType ||
-      (dayName === "Sunday" ? "Sunday Weekly Meeting" : "Daily Meeting");
+    const resolvedMeetingType = normalizeMeetingType(meetingType, dayName);
 
-    if (resolvedMeetingType === "Sunday Meeting") {
-      resolvedMeetingType = "Sunday Weekly Meeting";
-    }
-
-    if (resolvedMeetingType === "Daily Standup") {
-      resolvedMeetingType = "Daily Meeting";
-    }
-
-    if (!VALID_MEETING_TYPES.includes(resolvedMeetingType)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid meeting type",
-      });
-    }
-
+    // Sunday must always use Sunday Weekly Meeting.
     if (
       dayName === "Sunday" &&
       resolvedMeetingType !== "Sunday Weekly Meeting"
@@ -527,12 +659,17 @@ const markBulkAttendance = async (req, res) => {
       });
     }
 
+    // Monday-Saturday must use Daily Meeting.
     if (dayName !== "Sunday" && resolvedMeetingType !== "Daily Meeting") {
       return res.status(400).json({
         success: false,
         message: "Monday-Saturday must use Daily Meeting",
       });
     }
+
+    // ============================================================
+    // GET / CREATE TEAM SESSION
+    // ============================================================
 
     const teamMeetingSession = await getOrCreateTeamMeetingSession({
       team,
@@ -548,31 +685,47 @@ const markBulkAttendance = async (req, res) => {
 
     const savedRecords = [];
 
-    for (const item of attendanceList) {
-      const studentId = String(item.studentId);
+    // ============================================================
+    // PROCESS STUDENTS
+    // ============================================================
 
-      const student = studentMap.get(studentId);
+    for (const item of attendanceList) {
+      const currentStudentId = String(item.studentId);
+
+      const student = studentMap.get(currentStudentId);
 
       if (!student) {
         return res.status(404).json({
           success: false,
-          message: `Student not found: ${studentId}`,
+          message: `Student not found: ${currentStudentId}`,
         });
       }
 
-      if (!teamStudentIds.has(studentId)) {
+      // ----------------------------------------------------------
+      // TEAM SECURITY
+      // ----------------------------------------------------------
+
+      if (!teamStudentIds.has(currentStudentId)) {
         return res.status(403).json({
           success: false,
           message: `${student.firstName} ${student.lastName} is not assigned to your team`,
         });
       }
 
-      if (student.gender !== req.user.gender) {
+      // ----------------------------------------------------------
+      // GENDER SECURITY
+      // ----------------------------------------------------------
+
+      if (student.gender !== mentorGender) {
         return res.status(403).json({
           success: false,
           message: `You cannot mark attendance for ${student.firstName} ${student.lastName}`,
         });
       }
+
+      // ----------------------------------------------------------
+      // BATCH SECURITY
+      // ----------------------------------------------------------
 
       if (String(student.batch) !== String(team.batch)) {
         return res.status(403).json({
@@ -580,6 +733,10 @@ const markBulkAttendance = async (req, res) => {
           message: `Student ${student.firstName} does not belong to your team's batch`,
         });
       }
+
+      // ----------------------------------------------------------
+      // STATUS
+      // ----------------------------------------------------------
 
       const firstStatus = item.firstCheck || "Present";
 
@@ -601,6 +758,10 @@ const markBulkAttendance = async (req, res) => {
 
       const now = new Date();
 
+      // ----------------------------------------------------------
+      // FIND EXISTING RECORD
+      // ----------------------------------------------------------
+
       let record = await Attendance.findOne({
         studentId: student._id,
 
@@ -608,6 +769,10 @@ const markBulkAttendance = async (req, res) => {
 
         sessionId: teamMeetingSession._id,
       });
+
+      // ----------------------------------------------------------
+      // UPDATE
+      // ----------------------------------------------------------
 
       if (record) {
         record.studentId = student._id;
@@ -620,6 +785,10 @@ const markBulkAttendance = async (req, res) => {
 
         record.week = numericWeek;
 
+        record.dayName = dayName;
+
+        record.meetingType = resolvedMeetingType;
+
         record.sessionType = "Team Meeting";
 
         record.sessionName = `${resolvedMeetingType} - ${dayName}`;
@@ -628,24 +797,27 @@ const markBulkAttendance = async (req, res) => {
 
         record.gender = student.gender;
 
+        record.status = calculateOverallStatus(firstStatus, secondStatus);
+
         record.firstCheck = {
           status: firstStatus,
-
           markedBy: mentorId,
-
           timestamp: now,
         };
 
         record.secondCheck = {
           status: secondStatus,
-
           markedBy: mentorId,
-
           timestamp: now,
         };
 
         await record.save();
-      } else {
+      }
+
+      // ----------------------------------------------------------
+      // CREATE
+      // ----------------------------------------------------------
+      else {
         record = await Attendance.create({
           studentId: student._id,
 
@@ -657,6 +829,10 @@ const markBulkAttendance = async (req, res) => {
 
           week: numericWeek,
 
+          dayName,
+
+          meetingType: resolvedMeetingType,
+
           sessionType: "Team Meeting",
 
           sessionName: `${resolvedMeetingType} - ${dayName}`,
@@ -665,19 +841,17 @@ const markBulkAttendance = async (req, res) => {
 
           gender: student.gender,
 
+          status: calculateOverallStatus(firstStatus, secondStatus),
+
           firstCheck: {
             status: firstStatus,
-
             markedBy: mentorId,
-
             timestamp: now,
           },
 
           secondCheck: {
             status: secondStatus,
-
             markedBy: mentorId,
-
             timestamp: now,
           },
         });
@@ -686,13 +860,23 @@ const markBulkAttendance = async (req, res) => {
       savedRecords.push(record);
     }
 
+    // ============================================================
+    // RISK CALCULATION
+    // ============================================================
+
     if (calculateStudentRisk && typeof calculateStudentRisk === "function") {
       await Promise.all(
         students.map((student) =>
-          calculateStudentRisk(student._id, team.batch),
+          calculateStudentRisk(student._id, team.batch).catch((riskError) => {
+            console.error("Risk calculation failed:", riskError.message);
+          }),
         ),
       );
     }
+
+    // ============================================================
+    // SUCCESS
+    // ============================================================
 
     return res.status(200).json({
       success: true,
@@ -710,7 +894,13 @@ const markBulkAttendance = async (req, res) => {
       meetingType: resolvedMeetingType,
     });
   } catch (error) {
-    console.error("MARK BULK ATTENDANCE ERROR:", error);
+    console.error("================================================");
+
+    console.error("MARK BULK ATTENDANCE ERROR:");
+
+    console.error(error);
+
+    console.error("================================================");
 
     if (error.code === 11000) {
       return res.status(409).json({
@@ -744,11 +934,27 @@ const markBulkAttendance = async (req, res) => {
   }
 };
 
+// ================================================================
+// MARK SINGLE ATTENDANCE
+// ================================================================
+
 const markAttendance = async (req, res) => {
   try {
-    const { studentId, sessionId, week, dayName, checkType, status } = req.body;
+    const {
+      studentId,
+      sessionId,
+      week,
+      dayName,
+      meetingType,
+      checkType,
+      status,
+    } = req.body;
 
     const mentorId = req.user?._id;
+
+    // ============================================================
+    // AUTH
+    // ============================================================
 
     if (!mentorId) {
       return res.status(401).json({
@@ -756,6 +962,10 @@ const markAttendance = async (req, res) => {
         message: "Mentor authentication required",
       });
     }
+
+    // ============================================================
+    // REQUIRED FIELDS
+    // ============================================================
 
     if (!studentId || !checkType || !status) {
       return res.status(400).json({
@@ -785,6 +995,10 @@ const markAttendance = async (req, res) => {
       });
     }
 
+    // ============================================================
+    // FIND TEAM
+    // ============================================================
+
     const team = await findMentorTeam(mentorId);
 
     if (!team) {
@@ -793,6 +1007,10 @@ const markAttendance = async (req, res) => {
         message: "You are not assigned to a team",
       });
     }
+
+    // ============================================================
+    // FIND STUDENT
+    // ============================================================
 
     const student = await User.findOne({
       _id: studentId,
@@ -806,16 +1024,21 @@ const markAttendance = async (req, res) => {
       });
     }
 
-    const belongsToTeam = (team.students || []).some(
-      (id) => String(id) === String(student._id),
-    );
+    // ============================================================
+    // TEAM SECURITY
+    // ============================================================
 
-    if (!belongsToTeam) {
+    if (!studentBelongsToTeam(team, studentId)) {
       return res.status(403).json({
         success: false,
-        message: "This student is not assigned to your team",
+        message:
+          "You can only manage attendance for students in your assigned team",
       });
     }
+
+    // ============================================================
+    // GENDER SECURITY
+    // ============================================================
 
     if (req.user?.gender && student.gender !== req.user.gender) {
       return res.status(403).json({
@@ -823,6 +1046,10 @@ const markAttendance = async (req, res) => {
         message: "You cannot mark attendance for this student",
       });
     }
+
+    // ============================================================
+    // SESSION
+    // ============================================================
 
     let session = null;
 
@@ -860,11 +1087,38 @@ const markAttendance = async (req, res) => {
           message: "This session does not belong to your team's batch",
         });
       }
+
+      // Main cohort sessions only.
+      if (!GENERAL_SESSION_TYPES.includes(session.type)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid main session type: ${session.type}`,
+        });
+      }
     }
 
-    let teamMeetingSession = null;
+    // ============================================================
+    // DETERMINE WHETHER MAIN OR TEAM SESSION
+    // ============================================================
 
-    let targetWeek = Number(week) || session?.week || 1;
+    const isMainSession = Boolean(session);
+
+    // ============================================================
+    // WEEK
+    // ============================================================
+
+    const targetWeek = isMainSession ? Number(session.week) : Number(week);
+
+    if (!Number.isInteger(targetWeek) || targetWeek < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "week must be a positive integer",
+      });
+    }
+
+    // ============================================================
+    // DAY
+    // ============================================================
 
     const targetDayName =
       dayName ||
@@ -877,30 +1131,46 @@ const markAttendance = async (req, res) => {
     if (!VALID_DAYS.includes(targetDayName)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid meeting day",
+        message: "Invalid day name",
       });
     }
 
-    if (!Number.isInteger(targetWeek) || targetWeek < 1) {
-      return res.status(400).json({
-        success: false,
-        message: "week must be a positive integer",
-      });
+    // ============================================================
+    // MEETING / SESSION TYPE
+    // ============================================================
+
+    let targetMeetingType;
+
+    if (isMainSession) {
+      targetMeetingType = session.type;
+    } else {
+      targetMeetingType = normalizeMeetingType(meetingType, targetDayName);
+
+      if (
+        targetDayName === "Sunday" &&
+        targetMeetingType !== "Sunday Weekly Meeting"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Sunday must use Sunday Weekly Meeting",
+        });
+      }
+
+      if (targetDayName !== "Sunday" && targetMeetingType !== "Daily Meeting") {
+        return res.status(400).json({
+          success: false,
+          message: "Monday-Saturday must use Daily Meeting",
+        });
+      }
     }
 
-    let targetMeetingType =
-      session?.type ||
-      (targetDayName === "Sunday" ? "Sunday Weekly Meeting" : "Daily Meeting");
+    // ============================================================
+    // TEAM MEETING SESSION
+    // ============================================================
 
-    if (targetMeetingType === "Sunday Meeting") {
-      targetMeetingType = "Sunday Weekly Meeting";
-    }
+    let teamMeetingSession = null;
 
-    if (targetMeetingType === "Daily Standup") {
-      targetMeetingType = "Daily Meeting";
-    }
-
-    if (!session) {
+    if (!isMainSession) {
       teamMeetingSession = await getOrCreateTeamMeetingSession({
         team,
 
@@ -916,104 +1186,140 @@ const markAttendance = async (req, res) => {
       session = teamMeetingSession;
     }
 
+    // ============================================================
+    // BATCH
+    // ============================================================
+
     const batchId = session?.batch || team.batch;
 
     if (!batchId) {
       return res.status(400).json({
         success: false,
-        message: "Unable to determine batch",
+        message: "Unable to determine batch for attendance",
       });
     }
 
-    const checkField = checkType === "first" ? "firstCheck" : "secondCheck";
+    // ============================================================
+    // SESSION NAME
+    // ============================================================
 
-    const existingRecord = await Attendance.findOne({
+    const targetSessionName = isMainSession
+      ? session.name || session.type
+      : `${targetMeetingType} - ${targetDayName}`;
+
+    // ============================================================
+    // EXISTING RECORD
+    // ============================================================
+
+    const filter = {
       studentId: student._id,
 
       teamId: team._id,
 
       sessionId: session._id,
-    });
+    };
+
+    const existingRecord = await Attendance.findOne(filter);
+
+    // ============================================================
+    // PRESERVE OTHER CHECK
+    // ============================================================
+
+    const firstStatus =
+      checkType === "first"
+        ? status
+        : existingRecord?.firstCheck?.status || null;
+
+    const secondStatus =
+      checkType === "second"
+        ? status
+        : existingRecord?.secondCheck?.status || null;
+
+    // ============================================================
+    // CHECK FIELD
+    // ============================================================
+
+    const checkField = checkType === "first" ? "firstCheck" : "secondCheck";
+
+    const now = new Date();
+
+    // ============================================================
+    // CHECK DATA
+    // ============================================================
 
     const checkData = {
       status,
 
       markedBy: mentorId,
 
-      timestamp: new Date(),
+      timestamp: now,
     };
 
-    let record;
+    // ============================================================
+    // UPDATE DATA
+    // ============================================================
 
-    if (existingRecord) {
-      record = existingRecord;
+    const updateData = {
+      studentId: student._id,
 
-      record.studentId = student._id;
+      mentorId,
 
-      record.batchId = batchId;
+      batchId,
 
-      record.teamId = team._id;
+      teamId: team._id,
 
-      record.sessionId = session._id;
+      sessionId: session._id,
 
-      record.week = targetWeek;
+      week: targetWeek,
 
-      record.sessionType = teamMeetingSession ? "Team Meeting" : session.type;
+      dayName: targetDayName,
 
-      record.sessionName = teamMeetingSession
-        ? `${targetMeetingType} - ${targetDayName}`
-        : session.name;
+      meetingType: targetMeetingType,
 
-      record.date = session.date || new Date();
+      sessionType: isMainSession ? session.type : "Team Meeting",
 
-      record.gender = student.gender;
+      sessionName: targetSessionName,
 
-      record[checkField] = checkData;
+      date: session.date || now,
 
-      await record.save();
-    } else {
-      record = await Attendance.create({
-        studentId: student._id,
+      gender: student.gender,
 
-        batchId,
+      status: calculateOverallStatus(firstStatus, secondStatus),
 
-        teamId: team._id,
+      [checkField]: checkData,
+    };
 
-        sessionId: session._id,
+    // ============================================================
+    // UPDATE OR CREATE
+    // ============================================================
 
-        week: targetWeek,
+    const record = await Attendance.findOneAndUpdate(
+      filter,
 
-        sessionType: teamMeetingSession ? "Team Meeting" : session.type,
+      {
+        $set: updateData,
+      },
 
-        sessionName: teamMeetingSession
-          ? `${targetMeetingType} - ${targetDayName}`
-          : session.name,
+      {
+        new: true,
 
-        date: session.date || new Date(),
+        upsert: true,
 
-        gender: student.gender,
+        setDefaultsOnInsert: true,
 
-        firstCheck:
-          checkType === "first"
-            ? checkData
-            : {
-                status: null,
-                markedBy: null,
-                timestamp: null,
-              },
+        runValidators: true,
+      },
+    );
 
-        secondCheck:
-          checkType === "second"
-            ? checkData
-            : {
-                status: null,
-                markedBy: null,
-                timestamp: null,
-              },
-      });
-    }
+    // ============================================================
+    // STATISTICS
+    // ============================================================
 
     const statistics = calculateChecks([record]);
+
+    // ============================================================
+    // RISK
+    // ============================================================
 
     let risk = null;
 
@@ -1023,11 +1329,15 @@ const markAttendance = async (req, res) => {
       batchId
     ) {
       try {
-        risk = await calculateStudentRisk(studentId, batchId);
+        risk = await calculateStudentRisk(student._id, batchId);
       } catch (riskError) {
-        console.error("ATTENDANCE RISK CALCULATION ERROR:", riskError);
+        console.error("Attendance risk calculation failed:", riskError.message);
       }
     }
+
+    // ============================================================
+    // SUCCESS
+    // ============================================================
 
     return res.status(200).json({
       success: true,
@@ -1089,6 +1399,10 @@ const markAttendance = async (req, res) => {
   }
 };
 
+// ================================================================
+// GET MENTOR STUDENTS
+// ================================================================
+
 const getMentorStudents = async (req, res) => {
   try {
     const mentorId = req.user?._id;
@@ -1111,6 +1425,10 @@ const getMentorStudents = async (req, res) => {
         "firstName lastName fullName schoolId gender email batch",
       );
 
+    // ============================================================
+    // FALLBACK
+    // ============================================================
+
     if (!team) {
       const mentor = await User.findById(mentorId).populate(
         "assignedStudents",
@@ -1129,6 +1447,10 @@ const getMentorStudents = async (req, res) => {
         students: mentor?.assignedStudents || [],
       });
     }
+
+    // ============================================================
+    // TEAM STUDENTS
+    // ============================================================
 
     const students = (team.students || []).filter(
       (student) => !mentorGender || student.gender === mentorGender,
@@ -1160,6 +1482,10 @@ const getMentorStudents = async (req, res) => {
   }
 };
 
+// ================================================================
+// GET TEAM RECORDS FOR SESSION
+// ================================================================
+
 const getTeamRecordsForSession = async (req, res) => {
   try {
     const { sessionId, week, dayName } = req.query;
@@ -1173,9 +1499,7 @@ const getTeamRecordsForSession = async (req, res) => {
       });
     }
 
-    const team = await Team.findOne({
-      mentors: mentorId,
-    });
+    const team = await findMentorTeam(mentorId);
 
     if (!team) {
       return res.status(404).json({
@@ -1183,6 +1507,10 @@ const getTeamRecordsForSession = async (req, res) => {
         message: "You are not assigned to a team",
       });
     }
+
+    // ==========================================================
+    // TEAM-RESTRICTED FILTER
+    // ==========================================================
 
     const filter = {
       teamId: team._id,
@@ -1195,6 +1523,14 @@ const getTeamRecordsForSession = async (req, res) => {
     if (week) {
       filter.week = Number(week);
     }
+
+    if (dayName) {
+      filter.dayName = dayName;
+    }
+
+    // ==========================================================
+    // GET RECORDS
+    // ==========================================================
 
     const records = await Attendance.find(filter)
       .populate(
@@ -1229,6 +1565,10 @@ const getTeamRecordsForSession = async (req, res) => {
   }
 };
 
+// ================================================================
+// GET STUDENT ATTENDANCE
+// ================================================================
+
 const getStudentAttendance = async (req, res) => {
   try {
     const { batchId } = req.query;
@@ -1242,6 +1582,10 @@ const getStudentAttendance = async (req, res) => {
       });
     }
 
+    // ==========================================================
+    // STUDENT-ONLY QUERY
+    // ==========================================================
+
     const query = {
       studentId,
     };
@@ -1251,6 +1595,10 @@ const getStudentAttendance = async (req, res) => {
     } else if (req.user?.batch) {
       query.batchId = req.user.batch;
     }
+
+    // ==========================================================
+    // RECORDS
+    // ==========================================================
 
     const records = await Attendance.find(query)
       .populate("batchId", "name status startDate endDate")
@@ -1262,6 +1610,10 @@ const getStudentAttendance = async (req, res) => {
         createdAt: 1,
       });
 
+    // ==========================================================
+    // SEPARATE TRACKS
+    // ==========================================================
+
     const generalRecords = records.filter((record) =>
       GENERAL_SESSION_TYPES.includes(record.sessionType),
     );
@@ -1272,11 +1624,19 @@ const getStudentAttendance = async (req, res) => {
         record.sessionType === "Team Meeting",
     );
 
+    // ==========================================================
+    // STATISTICS
+    // ==========================================================
+
     const overallStatistics = calculateChecks(records);
 
     const generalStatistics = calculateChecks(generalRecords);
 
     const teamStatistics = calculateChecks(teamRecords);
+
+    // ==========================================================
+    // RISK
+    // ==========================================================
 
     const riskBatchId = batchId || req.user?.batch;
 
@@ -1290,9 +1650,17 @@ const getStudentAttendance = async (req, res) => {
       typeof calculateStudentRisk === "function"
     ) {
       try {
-        risk = await calculateStudentRisk(studentId, riskBatchId);
-      } catch (error) {}
+        risk = (await calculateStudentRisk(studentId, riskBatchId)) || {
+          isAtRisk: false,
+        };
+      } catch (riskError) {
+        console.error("Risk calculation failed:", riskError.message);
+      }
     }
+
+    // ==========================================================
+    // RESPONSE
+    // ==========================================================
 
     return res.status(200).json({
       success: true,
@@ -1346,6 +1714,10 @@ const getStudentAttendance = async (req, res) => {
   }
 };
 
+// ================================================================
+// ADMIN ATTENDANCE STATS
+// ================================================================
+
 const getAdminAttendanceStats = async (req, res) => {
   try {
     const batches = await Batch.find().sort({
@@ -1356,6 +1728,7 @@ const getAdminAttendanceStats = async (req, res) => {
       batches.map(async (batch) => {
         const students = await User.find({
           batch: batch._id,
+
           role: "student",
         }).select("_id gender");
 
@@ -1441,10 +1814,11 @@ const getAdminAttendanceStats = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
       allBatches,
     });
   } catch (error) {
-    console.error("GET ADMIN ATTENDANCE STATS ERROR:", error);
+    console.error("ADMIN ATTENDANCE STATS ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -1454,9 +1828,17 @@ const getAdminAttendanceStats = async (req, res) => {
   }
 };
 
+// ================================================================
+// ADMIN BATCH REPORT
+// ================================================================
+
 const getAdminBatchReport = async (req, res) => {
   try {
     const { batchId } = req.params;
+
+    // ==========================================================
+    // VALIDATE BATCH
+    // ==========================================================
 
     if (!batchId || !mongoose.Types.ObjectId.isValid(batchId)) {
       return res.status(400).json({
@@ -1474,8 +1856,13 @@ const getAdminBatchReport = async (req, res) => {
       });
     }
 
+    // ==========================================================
+    // STUDENTS
+    // ==========================================================
+
     const students = await User.find({
       batch: batchId,
+
       role: "student",
     })
       .select("_id firstName lastName fullName schoolId gender email")
@@ -1486,6 +1873,10 @@ const getAdminBatchReport = async (req, res) => {
 
     const studentIds = students.map((student) => student._id);
 
+    // ==========================================================
+    // ATTENDANCE RECORDS
+    // ==========================================================
+
     const records =
       studentIds.length > 0
         ? await Attendance.find({
@@ -1493,12 +1884,16 @@ const getAdminBatchReport = async (req, res) => {
               $in: studentIds,
             },
 
-            batchId,
+            batchId: batchId,
           }).populate(
             "sessionId",
             "name type batch week date createdBy isActive",
           )
         : [];
+
+    // ==========================================================
+    // STUDENT REPORTS
+    // ==========================================================
 
     const studentReports = students.map((student) => {
       const studentRecords = records.filter(
@@ -1566,7 +1961,15 @@ const getAdminBatchReport = async (req, res) => {
       };
     });
 
+    // ==========================================================
+    // OVERALL BATCH STATISTICS
+    // ==========================================================
+
     const overallStats = calculateChecks(records);
+
+    // ==========================================================
+    // RESPONSE
+    // ==========================================================
 
     return res.status(200).json({
       success: true,
@@ -1600,7 +2003,7 @@ const getAdminBatchReport = async (req, res) => {
       students: studentReports,
     });
   } catch (error) {
-    console.error("GET ADMIN BATCH REPORT ERROR:", error);
+    console.error("ADMIN BATCH REPORT ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -1610,12 +2013,22 @@ const getAdminBatchReport = async (req, res) => {
   }
 };
 
+// ================================================================
+// EXPORTS
+// ================================================================
+
 module.exports = {
   markAttendance,
+
   markBulkAttendance,
+
   getMentorStudents,
+
   getTeamRecordsForSession,
+
   getStudentAttendance,
+
   getAdminAttendanceStats,
+
   getAdminBatchReport,
 };
