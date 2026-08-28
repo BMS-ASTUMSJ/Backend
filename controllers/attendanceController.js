@@ -1359,15 +1359,24 @@ const getAdminAttendanceStats = async (req, res) => {
           role: "student",
         }).select("_id gender");
 
-        const totalStudents = students.length;
-
-        const maleStudents = students.filter(
+        const maleStudentsList = students.filter(
           (student) => student.gender === "Male",
-        ).length;
+        );
 
-        const femaleStudents = students.filter(
+        const femaleStudentsList = students.filter(
           (student) => student.gender === "Female",
-        ).length;
+        );
+
+        const totalStudents = students.length;
+        const maleStudents = maleStudentsList.length;
+        const femaleStudents = femaleStudentsList.length;
+
+        const maleStudentIds = new Set(
+          maleStudentsList.map((student) => String(student._id)),
+        );
+        const femaleStudentIds = new Set(
+          femaleStudentsList.map((student) => String(student._id)),
+        );
 
         const studentIds = students.map((student) => student._id);
 
@@ -1383,6 +1392,16 @@ const getAdminAttendanceStats = async (req, res) => {
             : [];
 
         const statistics = calculateChecks(records);
+
+        const maleRecords = records.filter((r) =>
+          maleStudentIds.has(String(r.studentId)),
+        );
+        const femaleRecords = records.filter((r) =>
+          femaleStudentIds.has(String(r.studentId)),
+        );
+
+        const maleStats = calculateChecks(maleRecords);
+        const femaleStats = calculateChecks(femaleRecords);
 
         return {
           _id: batch._id,
@@ -1404,6 +1423,10 @@ const getAdminAttendanceStats = async (req, res) => {
           totalEarnedPoints: statistics.earnedPoints,
 
           overallAttendanceRate: statistics.attendanceRate,
+
+          maleAttendanceRate: maleStats.attendanceRate,
+
+          femaleAttendanceRate: femaleStats.attendanceRate,
 
           presentChecks: statistics.presentChecks,
 
@@ -1515,7 +1538,19 @@ const getAdminBatchReport = async (req, res) => {
 
         email: student.email,
 
+        presentChecks: stats.presentChecks,
+
+        absentChecks: stats.absentChecks,
+
+        lateChecks: stats.lateChecks,
+
+        excusedChecks: stats.excusedChecks,
+
+        applicableChecks: stats.applicableChecks,
+
         percentage: stats.attendanceRate,
+
+        attendanceRate: stats.attendanceRate,
 
         generalPercentage: generalStats.attendanceRate,
 
@@ -1548,6 +1583,16 @@ const getAdminBatchReport = async (req, res) => {
         totalStudents: students.length,
 
         totalSessions: records.length,
+
+        totalApplicableChecks: overallStats.applicableChecks,
+
+        totalPresent: overallStats.presentChecks,
+
+        totalLate: overallStats.lateChecks,
+
+        totalAbsent: overallStats.absentChecks,
+
+        totalExcused: overallStats.excusedChecks,
 
         overallAttendanceRate: overallStats.attendanceRate,
       },
