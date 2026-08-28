@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
-const Submission = require("../models/submission");
-const Assignment = require("../models/assignment");
+const Submission = require("../models/Submission");
+const Assignment = require("../models/Assignment");
 const MentorAssignmentSubmission = require("../models/mentorAssignmentSubmission");
 const MentorAssignment = require("../models/mentorAssignment");
 const Team = require("../models/team");

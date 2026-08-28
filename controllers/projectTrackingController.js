@@ -1,8 +1,8 @@
 const mongoose = require("mongoose");
 
 const ProjectTracking = require("../models/projectTracking");
-const Assignment = require("../models/assignment");
-const Submission = require("../models/submission");
+const Assignment = require("../models/Assignment");
+const Submission = require("../models/Submission");
 const Team = require("../models/team");
 
 const completeProjectTracking = async (req, res) => {

@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const path = require("path");
 const fs = require("fs");
 
-const Assignment = require("../models/assignment");
+const Assignment = require("../models/Assignment");
 const Batch = require("../models/batch");
 const User = require("../models/user");
 const Team = require("../models/team");

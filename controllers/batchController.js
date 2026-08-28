@@ -4,14 +4,14 @@ const User = require("../models/user");
 const Team = require("../models/team");
 const Applicant = require("../models/applicant");
 const Attendance = require("../models/attendance");
-const Assignment = require("../models/assignment");
+const Assignment = require("../models/Assignment");
 
 let Submission = null;
 try {
   Submission = mongoose.model("Submission");
 } catch {
   try {
-    Submission = require("../models/submission");
+    Submission = require("../models/Submission");
   } catch (e) {
     Submission = null;
   }

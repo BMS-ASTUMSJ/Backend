@@ -1,6 +1,6 @@
 const Attendance = require("../models/attendance");
-const Assignment = require("../models/assignment");
-const Submission = require("../models/submission");
+const Assignment = require("../models/Assignment");
+const Submission = require("../models/Submission");
 
 const ABSENCE_THRESHOLD = 2;
 const MISSED_ASSIGNMENT_THRESHOLD = 2;

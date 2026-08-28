@@ -6,8 +6,8 @@ const User = require("../models/user");
 const Batch = require("../models/batch");
 
 const Attendance = require("../models/attendance");
-const Assignment = require("../models/assignment");
-const Submission = require("../models/submission");
+const Assignment = require("../models/Assignment");
+const Submission = require("../models/Submission");
 const ProgressContent = require("../models/progressContent");
 const StudentProgress = require("../models/studentProgress");
 const Announcement = require("../models/announcement");
