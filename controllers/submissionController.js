@@ -1,15 +1,11 @@
 const mongoose = require("mongoose");
 
-const Submission = require("../models/Submission");
-const Assignment = require("../models/Assignment");
+const Submission = require("../models/submission");
+const Assignment = require("../models/assignment");
 const MentorAssignmentSubmission = require("../models/mentorAssignmentSubmission");
 const MentorAssignment = require("../models/mentorAssignment");
 const Team = require("../models/team");
 const User = require("../models/user");
-
-// ======================================================
-// STUDENT SUBMITS NORMAL ADMIN ASSIGNMENT
-// ======================================================
 
 const submitAssignment = async (req, res) => {
   try {
@@ -156,10 +152,6 @@ const submitAssignment = async (req, res) => {
   }
 };
 
-// ======================================================
-// UPDATE NORMAL ASSIGNMENT SUBMISSION
-// ======================================================
-
 const updateSubmission = async (req, res) => {
   try {
     const { id } = req.params;
@@ -245,12 +237,7 @@ const updateSubmission = async (req, res) => {
   }
 };
 
-// ======================================================
-// CHECK WHETHER MENTOR CAN GRADE THIS STUDENT
-// ======================================================
-
 const mentorCanGradeStudent = async (mentorId, studentId) => {
-  // First check Team relationship.
   const team = await Team.findOne({
     mentors: mentorId,
     students: studentId,
@@ -260,7 +247,6 @@ const mentorCanGradeStudent = async (mentorId, studentId) => {
     return true;
   }
 
-  // Also support the user's assignedStudents relationship.
   const mentor = await User.findById(mentorId).select("assignedStudents");
 
   if (!mentor) {
@@ -271,10 +257,6 @@ const mentorCanGradeStudent = async (mentorId, studentId) => {
     (id) => id.toString() === studentId.toString(),
   );
 };
-
-// ======================================================
-// GRADE NORMAL ADMIN ASSIGNMENT
-// ======================================================
 
 const gradeSubmission = async (req, res) => {
   try {
@@ -352,10 +334,6 @@ const gradeSubmission = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // MENTOR AUTHORIZATION
-    // --------------------------------------------------
-
     if (req.user.role === "mentor") {
       const canGrade = await mentorCanGradeStudent(
         req.user._id,
@@ -370,8 +348,6 @@ const gradeSubmission = async (req, res) => {
       }
     }
 
-    // Only mentors can use this endpoint because the route
-    // is already protected with authorize("mentor").
     if (req.user.role !== "mentor") {
       return res.status(403).json({
         success: false,
@@ -410,10 +386,6 @@ const gradeSubmission = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// GET SUBMISSIONS FOR NORMAL ADMIN ASSIGNMENT
-// ======================================================
 
 const getSubmissionsByAssignment = async (req, res) => {
   try {
@@ -488,10 +460,6 @@ const getSubmissionsByAssignment = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// STUDENT SEES OWN NORMAL SUBMISSIONS
-// ======================================================
 
 const getMySubmissions = async (req, res) => {
   try {

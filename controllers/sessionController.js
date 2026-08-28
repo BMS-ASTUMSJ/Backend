@@ -11,10 +11,6 @@ const VALID_TYPES = [
   "Sunday Meeting",
 ];
 
-// ============================================================
-// HELPERS
-// ============================================================
-
 const getStartOfDay = (value) => {
   const date = new Date(value);
 
@@ -31,19 +27,11 @@ const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(id);
 };
 
-// ============================================================
-// CREATE SINGLE SESSION
-// ============================================================
-
 const createSession = async (req, res) => {
   try {
     const { batchId, week, type, date, name, order, teamId } = req.body;
 
     const adminId = req.user?._id;
-
-    // --------------------------------------------------------
-    // AUTHENTICATION
-    // --------------------------------------------------------
 
     if (!adminId) {
       return res.status(401).json({
@@ -52,20 +40,12 @@ const createSession = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // REQUIRED FIELDS
-    // --------------------------------------------------------
-
     if (!batchId || !week || !type || !date) {
       return res.status(400).json({
         success: false,
         message: "batchId, week, type and date are required",
       });
     }
-
-    // --------------------------------------------------------
-    // VALIDATE BATCH ID
-    // --------------------------------------------------------
 
     if (!isValidObjectId(batchId)) {
       return res.status(400).json({
@@ -74,20 +54,12 @@ const createSession = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // VALIDATE TYPE
-    // --------------------------------------------------------
-
     if (!VALID_TYPES.includes(type)) {
       return res.status(400).json({
         success: false,
         message: "Invalid session type",
       });
     }
-
-    // --------------------------------------------------------
-    // VALIDATE WEEK
-    // --------------------------------------------------------
 
     const weekNumber = Number(week);
 
@@ -98,10 +70,6 @@ const createSession = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // CHECK BATCH
-    // --------------------------------------------------------
-
     const batch = await Batch.findById(batchId);
 
     if (!batch) {
@@ -111,10 +79,6 @@ const createSession = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // VALIDATE DATE
-    // --------------------------------------------------------
-
     const sessionDate = new Date(date);
 
     if (Number.isNaN(sessionDate.getTime())) {
@@ -123,10 +87,6 @@ const createSession = async (req, res) => {
         message: "Invalid session date",
       });
     }
-
-    // --------------------------------------------------------
-    // NO PAST DATES
-    // --------------------------------------------------------
 
     const today = getStartOfDay(new Date());
     const selectedDate = getStartOfDay(sessionDate);
@@ -145,10 +105,6 @@ const createSession = async (req, res) => {
           "Session date cannot be in the past. Must be today or a future date.",
       });
     }
-
-    // --------------------------------------------------------
-    // SESSION NAME / ORDER
-    // --------------------------------------------------------
 
     let sessionOrder = Number(order) || 1;
     let sessionName = name?.trim() || "";
@@ -169,10 +125,6 @@ const createSession = async (req, res) => {
       sessionName = sessionName || type;
       sessionOrder = sessionOrder || 1;
     }
-
-    // --------------------------------------------------------
-    // CREATE SESSION
-    // --------------------------------------------------------
 
     const session = await Session.create({
       batch: batchId,
@@ -209,33 +161,11 @@ const createSession = async (req, res) => {
   }
 };
 
-// ============================================================
-// GENERATE WEEK SESSIONS
-// ============================================================
-//
-// FRONTEND FORMAT:
-//
-// dates: {
-//   lecture1: "2026-08-25",
-//   lecture2: "2026-08-27",
-//   lecture3: "2026-08-29",
-//   experienceSharing: "2026-08-30",
-//   contest: "2026-08-31"
-// }
-//
-// This backend supports any number of lectures.
-//
-// ============================================================
-
 const generateWeekSessions = async (req, res) => {
   try {
     const { batchId, week, lectureCount, dates } = req.body;
 
     const adminId = req.user?._id;
-
-    // --------------------------------------------------------
-    // AUTHENTICATION
-    // --------------------------------------------------------
 
     if (!adminId) {
       return res.status(401).json({
@@ -244,10 +174,6 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // REQUIRED
-    // --------------------------------------------------------
-
     if (!batchId || !week) {
       return res.status(400).json({
         success: false,
@@ -255,20 +181,12 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // VALIDATE BATCH ID
-    // --------------------------------------------------------
-
     if (!isValidObjectId(batchId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid batch ID",
       });
     }
-
-    // --------------------------------------------------------
-    // VALIDATE WEEK
-    // --------------------------------------------------------
 
     const weekNumber = Number(week);
 
@@ -279,27 +197,12 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // LECTURE COUNT
-    // --------------------------------------------------------
-    //
-    // No artificial maximum.
-    //
-    // The frontend can generate:
-    // 1, 2, 3, 4, 5, 6, 7, ...
-    //
-    // --------------------------------------------------------
-
     const requestedLectureCount = Number(lectureCount);
 
     const lectures =
       Number.isInteger(requestedLectureCount) && requestedLectureCount >= 1
         ? requestedLectureCount
         : 1;
-
-    // --------------------------------------------------------
-    // CHECK BATCH
-    // --------------------------------------------------------
 
     const batch = await Batch.findById(batchId);
 
@@ -310,48 +213,14 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------------
-    // TODAY
-    // --------------------------------------------------------
-
     const today = getStartOfDay(new Date());
 
-    // --------------------------------------------------------
-    // SESSIONS TO CREATE
-    // --------------------------------------------------------
-
     const sessionsToCreate = [];
-
-    // ========================================================
-    // LECTURES
-    // ========================================================
-    //
-    // IMPORTANT FIX:
-    //
-    // The frontend sends:
-    //
-    // dates.lecture1
-    // dates.lecture2
-    // dates.lecture3
-    //
-    // NOT:
-    //
-    // dates.lectures[]
-    //
-    // ========================================================
 
     for (let i = 0; i < lectures; i++) {
       const lectureNumber = i + 1;
 
       const rawDate = dates?.[`lecture${lectureNumber}`];
-
-      // ------------------------------------------------------
-      // EMPTY DATE
-      // ------------------------------------------------------
-      //
-      // If a lecture has no date, don't create it.
-      //
-      // ------------------------------------------------------
 
       if (
         rawDate === undefined ||
@@ -360,10 +229,6 @@ const generateWeekSessions = async (req, res) => {
       ) {
         continue;
       }
-
-      // ------------------------------------------------------
-      // VALIDATE DATE
-      // ------------------------------------------------------
 
       const lectureDate = new Date(rawDate);
 
@@ -383,20 +248,12 @@ const generateWeekSessions = async (req, res) => {
         });
       }
 
-      // ------------------------------------------------------
-      // NO PAST DATE
-      // ------------------------------------------------------
-
       if (lectureDay < today) {
         return res.status(400).json({
           success: false,
           message: `Lecture ${lectureNumber} date cannot be in the past.`,
         });
       }
-
-      // ------------------------------------------------------
-      // CREATE LECTURE OBJECT
-      // ------------------------------------------------------
 
       sessionsToCreate.push({
         batch: batchId,
@@ -410,10 +267,6 @@ const generateWeekSessions = async (req, res) => {
         isActive: true,
       });
     }
-
-    // ========================================================
-    // EXPERIENCE SHARING
-    // ========================================================
 
     const experienceSharingDate = dates?.experienceSharing;
 
@@ -460,10 +313,6 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    // ========================================================
-    // CONTEST
-    // ========================================================
-
     const contestDate = dates?.contest;
 
     if (
@@ -509,32 +358,16 @@ const generateWeekSessions = async (req, res) => {
       });
     }
 
-    // ========================================================
-    // REMOVE OLD SCHEDULE FOR THIS WEEK
-    // ========================================================
-    //
-    // This allows the admin to regenerate the week.
-    //
-    // ========================================================
-
     await Session.deleteMany({
       batch: batchId,
       week: weekNumber,
     });
-
-    // ========================================================
-    // CREATE NEW SCHEDULE
-    // ========================================================
 
     let created = [];
 
     if (sessionsToCreate.length > 0) {
       created = await Session.insertMany(sessionsToCreate);
     }
-
-    // ========================================================
-    // RESPONSE
-    // ========================================================
 
     return res.status(201).json({
       success: true,
@@ -574,10 +407,6 @@ const generateWeekSessions = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// LIST SESSIONS FOR BATCH
-// ============================================================
 
 const listSessionsForBatch = async (req, res) => {
   try {
@@ -629,11 +458,6 @@ const listSessionsForBatch = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// LIST SESSIONS FOR MENTOR
-// ============================================================
-
 const listSessionsForMentor = async (req, res) => {
   try {
     const team = await Team.findOne({
@@ -690,10 +514,6 @@ const listSessionsForMentor = async (req, res) => {
   }
 };
 
-// ============================================================
-// DELETE SESSION
-// ============================================================
-
 const deleteSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
@@ -736,10 +556,6 @@ const deleteSession = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// EXPORTS
-// ============================================================
 
 module.exports = {
   createSession,

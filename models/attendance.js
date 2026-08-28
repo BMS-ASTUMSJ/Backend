@@ -1,33 +1,7 @@
 const mongoose = require("mongoose");
 
-const checkSchema = new mongoose.Schema(
-  {
-    status: {
-      type: String,
-      enum: ["Present", "Absent", "Late", "Excused", null],
-      default: null,
-    },
-
-    markedAt: {
-      type: Date,
-      default: null,
-    },
-
-    markedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-  },
-  { _id: false },
-);
-
 const attendanceSchema = new mongoose.Schema(
   {
-    // ============================================================
-    // STUDENT
-    // ============================================================
-
     studentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -35,204 +9,105 @@ const attendanceSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ============================================================
-    // MENTOR
-    // ============================================================
-
-    mentorId: {
+    batchId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Batch",
       required: true,
+      index: true,
     },
-
-    // ============================================================
-    // TEAM
-    // ============================================================
 
     teamId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Team",
-      default: null,
+      required: true,
       index: true,
     },
-
-    // ============================================================
-    // BATCH
-    // ============================================================
-
-    batchId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Batch",
-      default: null,
-      index: true,
-    },
-
-    // ============================================================
-    // MAIN COHORT SESSION
-    // ============================================================
 
     sessionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Session",
-      default: null,
-      index: true,
+      required: false,
+      default: undefined,
     },
-
-    // ============================================================
-    // WEEK
-    // ============================================================
 
     week: {
       type: Number,
       required: true,
-      min: 1,
-      max: 12,
       index: true,
     },
 
-    // ============================================================
-    // DAY
-    // ============================================================
-
-    dayName: {
-      type: String,
-      enum: [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-      ],
-      required: true,
-    },
-
-    // ============================================================
-    // MEETING / SESSION TYPE
-    // ============================================================
-
-    meetingType: {
-      type: String,
-      enum: [
-        "Daily Meeting",
-        "Sunday Weekly Meeting",
-
-        // Main Cohort
-        "Lecture",
-        "Experience Sharing",
-        "Contest",
-      ],
-      required: true,
-    },
-
-    // ============================================================
-    // SESSION TYPE
-    // ============================================================
-
     sessionType: {
       type: String,
-      enum: [
-        "Daily Meeting",
-        "Sunday Weekly Meeting",
-        "Lecture",
-        "Experience Sharing",
-        "Contest",
-      ],
       required: true,
+      trim: true,
     },
-
-    // ============================================================
-    // SESSION NAME
-    // ============================================================
 
     sessionName: {
       type: String,
-      default: "",
+      required: true,
+      trim: true,
     },
-
-    // ============================================================
-    // DATE
-    // ============================================================
 
     date: {
       type: Date,
-      default: Date.now,
+      required: true,
+      index: true,
     },
 
-    // ============================================================
-    // FIRST CHECK
-    // ============================================================
+    gender: {
+      type: String,
+      enum: ["Male", "Female"],
+      required: true,
+    },
 
     firstCheck: {
-      type: checkSchema,
-      default: () => ({}),
-    },
+      status: {
+        type: String,
+        enum: ["Present", "Absent", "Late", "Excused"],
+        default: null,
+      },
 
-    // ============================================================
-    // SECOND CHECK
-    // ============================================================
+      markedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+
+      timestamp: {
+        type: Date,
+      },
+    },
 
     secondCheck: {
-      type: checkSchema,
-      default: () => ({}),
-    },
+      status: {
+        type: String,
+        enum: ["Present", "Absent", "Late", "Excused"],
+        default: null,
+      },
 
-    // ============================================================
-    // OVERALL STATUS
-    // ============================================================
+      markedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
 
-    status: {
-      type: String,
-      enum: ["Present", "Absent", "Late", "Excused", "Not Marked"],
-      default: "Not Marked",
+      timestamp: {
+        type: Date,
+      },
     },
   },
-
   {
     timestamps: true,
   },
 );
 
-// ================================================================
-// MAIN COHORT ATTENDANCE
-//
-// One student = one attendance record per main session.
-// ================================================================
-
 attendanceSchema.index(
   {
     studentId: 1,
+    teamId: 1,
     sessionId: 1,
   },
   {
     unique: true,
-    partialFilterExpression: {
-      sessionId: {
-        $type: "objectId",
-      },
-    },
-  },
-);
-
-// ================================================================
-// TEAM MEETING ATTENDANCE
-//
-// One student = one record per batch + week + day.
-// ================================================================
-
-attendanceSchema.index(
-  {
-    studentId: 1,
-    batchId: 1,
-    week: 1,
-    dayName: 1,
-  },
-  {
-    unique: true,
-    partialFilterExpression: {
-      sessionId: null,
-    },
+    name: "student_team_session_unique",
   },
 );
 

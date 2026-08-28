@@ -169,16 +169,6 @@ documentSchema.index({
   uploadedBy: 1,
   createdAt: -1,
 });
-
-documentSchema.index(
-  {
-    fileHash: 1,
-  },
-  {
-    unique: true,
-  },
-);
-
 // ======================================================
 // MODEL
 // ======================================================

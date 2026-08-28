@@ -4,10 +4,6 @@ const fs = require("fs");
 const MentorAssignment = require("../models/mentorAssignment");
 const User = require("../models/user");
 
-// ======================================================
-// DELETE UPLOADED FILES
-// ======================================================
-
 const deleteUploadedFiles = (files = []) => {
   if (!Array.isArray(files)) return;
 
@@ -22,10 +18,6 @@ const deleteUploadedFiles = (files = []) => {
   });
 };
 
-// ======================================================
-// FORMAT UPLOADED FILES
-// ======================================================
-
 const formatUploadedFiles = (files = []) => {
   if (!Array.isArray(files)) return [];
 
@@ -38,16 +30,8 @@ const formatUploadedFiles = (files = []) => {
   }));
 };
 
-// ======================================================
-// CREATE MENTOR ASSIGNMENT
-// ======================================================
-
 const createMentorAssignment = async (req, res) => {
   try {
-    // --------------------------------------------------
-    // GET DATA FROM REQUEST
-    // --------------------------------------------------
-
     const {
       title,
       description,
@@ -55,10 +39,6 @@ const createMentorAssignment = async (req, res) => {
       deadline,
       link = "",
     } = req.body;
-
-    // --------------------------------------------------
-    // MAKE SURE USER EXISTS
-    // --------------------------------------------------
 
     const mentor = await User.findById(req.user._id).select(
       "_id firstName lastName email role assignedStudents",
@@ -73,10 +53,6 @@ const createMentorAssignment = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // MAKE SURE USER IS A MENTOR
-    // --------------------------------------------------
-
     if (mentor.role !== "mentor") {
       deleteUploadedFiles(req.files);
 
@@ -85,10 +61,6 @@ const createMentorAssignment = async (req, res) => {
         message: "Only mentors can create assignments.",
       });
     }
-
-    // --------------------------------------------------
-    // VALIDATE TITLE
-    // --------------------------------------------------
 
     if (!title || !String(title).trim()) {
       deleteUploadedFiles(req.files);
@@ -99,10 +71,6 @@ const createMentorAssignment = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // VALIDATE DESCRIPTION
-    // --------------------------------------------------
-
     if (!description || !String(description).trim()) {
       deleteUploadedFiles(req.files);
 
@@ -112,10 +80,6 @@ const createMentorAssignment = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // VALIDATE INSTRUCTOR
-    // --------------------------------------------------
-
     if (!instructorName || !String(instructorName).trim()) {
       deleteUploadedFiles(req.files);
 
@@ -124,10 +88,6 @@ const createMentorAssignment = async (req, res) => {
         message: "Instructor name is required.",
       });
     }
-
-    // --------------------------------------------------
-    // VALIDATE DEADLINE
-    // --------------------------------------------------
 
     if (!deadline) {
       deleteUploadedFiles(req.files);
@@ -149,10 +109,6 @@ const createMentorAssignment = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // MAKE SURE DEADLINE IS IN THE FUTURE
-    // --------------------------------------------------
-
     if (parsedDeadline <= new Date()) {
       deleteUploadedFiles(req.files);
 
@@ -161,10 +117,6 @@ const createMentorAssignment = async (req, res) => {
         message: "Deadline must be in the future.",
       });
     }
-
-    // --------------------------------------------------
-    // GET MENTOR'S ASSIGNED STUDENTS
-    // --------------------------------------------------
 
     const studentIds = Array.isArray(mentor.assignedStudents)
       ? mentor.assignedStudents
@@ -178,10 +130,6 @@ const createMentorAssignment = async (req, res) => {
         message: "You do not have any assigned students.",
       });
     }
-
-    // --------------------------------------------------
-    // VERIFY ASSIGNED STUDENTS
-    // --------------------------------------------------
 
     const students = await User.find({
       _id: {
@@ -199,15 +147,7 @@ const createMentorAssignment = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // FORMAT FILES
-    // --------------------------------------------------
-
     const files = formatUploadedFiles(req.files || []);
-
-    // --------------------------------------------------
-    // CREATE ASSIGNMENT
-    // --------------------------------------------------
 
     const assignment = await MentorAssignment.create({
       title: String(title).trim(),
@@ -227,18 +167,10 @@ const createMentorAssignment = async (req, res) => {
       files,
     });
 
-    // --------------------------------------------------
-    // GET CREATED ASSIGNMENT WITH POPULATED DATA
-    // --------------------------------------------------
-
     const result = await MentorAssignment.findById(assignment._id)
       .populate("mentor", "firstName lastName email")
       .populate("assignedStudents", "firstName lastName email")
       .lean();
-
-    // --------------------------------------------------
-    // RESPONSE
-    // --------------------------------------------------
 
     return res.status(201).json({
       success: true,
@@ -256,10 +188,6 @@ const createMentorAssignment = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// GET MENTOR'S OWN ASSIGNMENTS
-// ======================================================
 
 const getMentorAssignments = async (req, res) => {
   try {
@@ -286,10 +214,6 @@ const getMentorAssignments = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// GET ASSIGNMENTS FOR STUDENT
-// ======================================================
 
 const getStudentMentorAssignments = async (req, res) => {
   try {
@@ -328,20 +252,12 @@ const getMentorAssignment = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // --------------------------------------------------
-    // VALIDATE ID
-    // --------------------------------------------------
-
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid assignment ID.",
       });
     }
-
-    // --------------------------------------------------
-    // FIND ASSIGNMENT
-    // --------------------------------------------------
 
     const assignment = await MentorAssignment.findById(id)
       .populate("mentor", "firstName lastName email")
@@ -355,10 +271,6 @@ const getMentorAssignment = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // MENTOR AUTHORIZATION
-    // --------------------------------------------------
-
     if (req.user.role === "mentor") {
       if (
         !assignment.mentor ||
@@ -370,10 +282,6 @@ const getMentorAssignment = async (req, res) => {
         });
       }
     }
-
-    // --------------------------------------------------
-    // STUDENT AUTHORIZATION
-    // --------------------------------------------------
 
     if (req.user.role === "student") {
       const assigned = assignment.assignedStudents.some(
@@ -387,10 +295,6 @@ const getMentorAssignment = async (req, res) => {
         });
       }
     }
-
-    // --------------------------------------------------
-    // RESPONSE
-    // --------------------------------------------------
 
     return res.status(200).json({
       success: true,

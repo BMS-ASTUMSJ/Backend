@@ -3,11 +3,6 @@ const User = require("../models/user");
 const Batch = require("../models/batch");
 const Team = require("../models/team");
 
-// ============================================================
-// GET MY BATCH HISTORY - MENTOR
-// GET /api/batch-history/my
-// ============================================================
-
 const getMyBatchHistory = async (req, res) => {
   try {
     const userId = req.user?._id;
@@ -37,10 +32,6 @@ const getMyBatchHistory = async (req, res) => {
       });
     }
 
-    // ============================================================
-    // CURRENT BATCH
-    // ============================================================
-
     let currentBatch = null;
     let currentRole = "mentor";
 
@@ -52,10 +43,6 @@ const getMyBatchHistory = async (req, res) => {
       }
     }
 
-    // ============================================================
-    // BATCH HISTORY
-    // ============================================================
-
     const history = Array.isArray(user.batchHistory) ? user.batchHistory : [];
 
     const historyBatchIds = history
@@ -63,7 +50,6 @@ const getMyBatchHistory = async (req, res) => {
       .filter(Boolean)
       .filter((id) => mongoose.Types.ObjectId.isValid(id));
 
-    // Include current batch in lookup if it isn't already
     if (
       user.batch &&
       mongoose.Types.ObjectId.isValid(user.batch) &&
@@ -87,10 +73,6 @@ const getMyBatchHistory = async (req, res) => {
         .lean();
     }
 
-    // ============================================================
-    // BUILD HISTORY RESPONSE
-    // ============================================================
-
     const batchHistory = batches.map((batch) => {
       const historyItem = history.find(
         (item) => item?.batch && item.batch.toString() === batch._id.toString(),
@@ -105,10 +87,6 @@ const getMyBatchHistory = async (req, res) => {
       };
     });
 
-    // ============================================================
-    // REMOVE CURRENT BATCH FROM HISTORY
-    // ============================================================
-
     const previousBatches = batchHistory.filter((item) => {
       if (!currentBatch?._id) {
         return true;
@@ -116,10 +94,6 @@ const getMyBatchHistory = async (req, res) => {
 
       return item.batchId.toString() !== currentBatch._id.toString();
     });
-
-    // ============================================================
-    // RESPONSE
-    // ============================================================
 
     return res.status(200).json({
       success: true,
@@ -137,11 +111,6 @@ const getMyBatchHistory = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// GET ONE BATCH
-// GET /api/batch-history/my/:batchId
-// ============================================================
 
 const getMyBatch = async (req, res) => {
   try {
@@ -181,15 +150,7 @@ const getMyBatch = async (req, res) => {
       });
     }
 
-    // ============================================================
-    // CHECK CURRENT BATCH
-    // ============================================================
-
     const isCurrentBatch = user.batch && user.batch.toString() === batchId;
-
-    // ============================================================
-    // CHECK HISTORY
-    // ============================================================
 
     const historyItem = Array.isArray(user.batchHistory)
       ? user.batchHistory.find(
@@ -204,10 +165,6 @@ const getMyBatch = async (req, res) => {
       });
     }
 
-    // ============================================================
-    // GET TEAM INFORMATION
-    // ============================================================
-
     const teams = await Team.find({
       batch: batchId,
       mentors: req.user._id,
@@ -215,10 +172,6 @@ const getMyBatch = async (req, res) => {
       .populate("mentors", "firstName lastName email profileImage")
       .populate("members", "firstName lastName email gender profileImage")
       .lean();
-
-    // ============================================================
-    // RESPONSE
-    // ============================================================
 
     return res.status(200).json({
       success: true,
@@ -239,11 +192,6 @@ const getMyBatch = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// GET ALL BATCHES - ADMIN
-// GET /api/batch-history/admin/batches
-// ============================================================
 
 const getAllBatchesForAdmin = async (req, res) => {
   try {
@@ -268,11 +216,6 @@ const getAllBatchesForAdmin = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// GET BATCH MEMBERS - ADMIN
-// GET /api/batch-history/admin/batches/:batchId/members
-// ============================================================
 
 const getBatchMembersForAdmin = async (req, res) => {
   try {
@@ -363,10 +306,6 @@ const getBatchMembersForAdmin = async (req, res) => {
     });
   }
 };
-
-// ============================================================
-// EXPORTS
-// ============================================================
 
 module.exports = {
   getMyBatchHistory,

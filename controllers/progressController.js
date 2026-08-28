@@ -223,7 +223,7 @@ const getMentorProgress = async (req, res) => {
 
     const { type, week, batchId, topic } = req.query;
 
-    const progress = await progressService.getMentorProgress(
+    const rawResult = await progressService.getMentorProgress(
       req.user._id,
       type,
       week,
@@ -231,9 +231,98 @@ const getMentorProgress = async (req, res) => {
       topic,
     );
 
+    let progressList = [];
+    let existingStats = null;
+
+    if (Array.isArray(rawResult)) {
+      progressList = rawResult;
+    } else if (Array.isArray(rawResult?.data)) {
+      progressList = rawResult.data;
+      existingStats = rawResult.stats;
+    } else if (Array.isArray(rawResult?.students)) {
+      progressList = rawResult.students;
+      existingStats = rawResult.stats;
+    } else if (Array.isArray(rawResult?.progress)) {
+      progressList = rawResult.progress;
+      existingStats = rawResult.stats;
+    }
+
+    let completed = 0;
+    let inProgress = 0;
+    let needHelp = 0;
+    let totalCpCompleted = 0;
+    let totalCpExpected = 0;
+    let totalDevCompleted = 0;
+    let totalDevExpected = 0;
+
+    progressList.forEach((s) => {
+      const cpDone = Number(
+        s?.cp?.completed ?? s?.cpCompleted ?? s?.completedCp ?? 0,
+      );
+      const cpTot = Number(s?.cp?.total ?? s?.cpTotal ?? s?.totalCp ?? 0);
+      const devDone = Number(
+        s?.dev?.completed ?? s?.devCompleted ?? s?.completedDev ?? 0,
+      );
+      const devTot = Number(s?.dev?.total ?? s?.devTotal ?? s?.totalDev ?? 0);
+
+      totalCpCompleted += cpDone;
+      totalCpExpected += cpTot;
+      totalDevCompleted += devDone;
+      totalDevExpected += devTot;
+
+      const totalDone = Number(s?.completed ?? cpDone + devDone);
+      const totalExpected = Number(s?.total ?? cpTot + devTot);
+
+      let rate = 0;
+      if (s?.completion !== undefined && s?.completion !== null) {
+        rate = Number(s.completion);
+      } else if (totalExpected > 0) {
+        rate = Math.round((totalDone / totalExpected) * 100);
+      }
+
+      const status = String(
+        s?.status || s?.progressStatus || s?.overallStatus || "",
+      ).toLowerCase();
+
+      const isNeedHelp =
+        status.includes("need") ||
+        status.includes("help") ||
+        status === "at_risk" ||
+        s?.atRisk === true ||
+        s?.student?.atRisk === true ||
+        s?.risk?.isAtRisk === true;
+
+      if (rate >= 100 || status === "completed" || status === "done") {
+        completed++;
+      } else if (isNeedHelp) {
+        needHelp++;
+      } else if (rate > 0) {
+        inProgress++;
+      }
+    });
+
+    const totalAllExpected = totalCpExpected + totalDevExpected;
+    const totalAllDone = totalCpCompleted + totalDevCompleted;
+    const overallPercentage =
+      totalAllExpected > 0
+        ? Math.min(Math.round((totalAllDone / totalAllExpected) * 100), 100)
+        : 0;
+
+    const stats = existingStats || {
+      completed,
+      inProgress,
+      needHelp,
+      totalCpCompleted,
+      totalCpExpected,
+      totalDevCompleted,
+      totalDevExpected,
+      overallPercentage,
+    };
+
     return res.status(200).json({
       success: true,
-      data: progress,
+      stats,
+      data: progressList,
     });
   } catch (error) {
     console.error("getMentorProgress error:", error);

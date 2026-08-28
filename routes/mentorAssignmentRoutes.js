@@ -13,15 +13,6 @@ const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 const upload = require("../middleware/upload");
 
-// ======================================================
-// MENTOR ASSIGNMENT ROUTES
-// ======================================================
-
-// ======================================================
-// CREATE ASSIGNMENT
-// POST /api/assignments/mentor-create
-// ======================================================
-
 router.post(
   "/mentor-create",
   protect,
@@ -30,17 +21,7 @@ router.post(
   createMentorAssignment,
 );
 
-// ======================================================
-// GET ASSIGNMENTS CREATED BY CURRENT MENTOR
-// GET /api/assignments/mentor
-// ======================================================
-
 router.get("/mentor", protect, authorize("mentor"), getMentorAssignments);
-
-// ======================================================
-// GET ASSIGNMENTS ASSIGNED TO CURRENT STUDENT
-// GET /api/assignments/student
-// ======================================================
 
 router.get(
   "/student",
@@ -48,11 +29,6 @@ router.get(
   authorize("student"),
   getStudentMentorAssignments,
 );
-
-// ======================================================
-// GET ONE ASSIGNMENT
-// GET /api/assignments/:id
-// ======================================================
 
 router.get(
   "/:id",

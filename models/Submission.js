@@ -76,4 +76,5 @@ submissionSchema.index(
   },
 );
 
-module.exports = mongoose.model("Submission", submissionSchema);
+module.exports =
+  mongoose.models.Submission || mongoose.model("Submission", submissionSchema);

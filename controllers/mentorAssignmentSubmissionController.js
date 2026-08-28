@@ -3,10 +3,6 @@ const mongoose = require("mongoose");
 const MentorAssignment = require("../models/mentorAssignment");
 const MentorAssignmentSubmission = require("../models/mentorAssignmentSubmission");
 
-// ======================================================
-// STUDENT SUBMITS MENTOR ASSIGNMENT
-// ======================================================
-
 const submitMentorAssignment = async (req, res) => {
   try {
     const { assignmentId, githubUrl, liveDemoUrl, notes } = req.body;
@@ -98,10 +94,6 @@ const submitMentorAssignment = async (req, res) => {
   }
 };
 
-// ======================================================
-// MENTOR SEES SUBMISSIONS FOR THEIR OWN ASSIGNMENT
-// ======================================================
-
 const getMentorAssignmentSubmissions = async (req, res) => {
   try {
     const { assignmentId } = req.params;
@@ -152,10 +144,6 @@ const getMentorAssignmentSubmissions = async (req, res) => {
   }
 };
 
-// ======================================================
-// MENTOR GIVES FEEDBACK ON OWN ASSIGNMENT
-// ======================================================
-
 const giveMentorFeedback = async (req, res) => {
   try {
     const { id } = req.params;
@@ -193,8 +181,6 @@ const giveMentorFeedback = async (req, res) => {
       });
     }
 
-    // ONLY THE MENTOR WHO CREATED THE ASSIGNMENT
-    // CAN GIVE FEEDBACK.
     if (assignment.mentor.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -225,10 +211,6 @@ const giveMentorFeedback = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// STUDENT SEES OWN MENTOR ASSIGNMENT SUBMISSIONS
-// ======================================================
 
 const getMyMentorSubmissions = async (req, res) => {
   try {

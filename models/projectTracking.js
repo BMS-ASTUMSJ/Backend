@@ -1,9 +1,5 @@
 const mongoose = require("mongoose");
 
-// ============================================================
-// TRACKED STUDENT
-// ============================================================
-
 const trackedStudentSchema = new mongoose.Schema(
   {
     student: {
@@ -30,10 +26,6 @@ const trackedStudentSchema = new mongoose.Schema(
   },
 );
 
-// ============================================================
-// PROJECT TRACKING
-// ============================================================
-
 const projectTrackingSchema = new mongoose.Schema(
   {
     assignment: {
@@ -47,14 +39,6 @@ const projectTrackingSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-
-    // --------------------------------------------------------
-    // IMPORTANT:
-    //
-    // We ONLY save Completed students.
-    //
-    // Pending and In Progress exist ONLY in frontend state.
-    // --------------------------------------------------------
 
     students: {
       type: [trackedStudentSchema],
@@ -85,10 +69,6 @@ const projectTrackingSchema = new mongoose.Schema(
   },
 );
 
-// ============================================================
-// ONE FINAL TRACKING RECORD PER MENTOR + ASSIGNMENT
-// ============================================================
-
 projectTrackingSchema.index(
   {
     assignment: 1,
@@ -99,4 +79,6 @@ projectTrackingSchema.index(
   },
 );
 
-module.exports = mongoose.model("ProjectTracking", projectTrackingSchema);
+module.exports =
+  mongoose.models.ProjectTracking ||
+  mongoose.model("ProjectTracking", projectTrackingSchema);

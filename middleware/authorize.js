@@ -1,6 +1,5 @@
 const authorize = (...allowedRoles) => {
   return (req, res, next) => {
-    // User must be authenticated first
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -8,13 +7,10 @@ const authorize = (...allowedRoles) => {
       });
     }
 
-    // Normalize role
     const userRole = String(req.user.role || "").toLowerCase();
 
-    // Normalize allowed roles
     const roles = allowedRoles.map((role) => String(role).toLowerCase());
 
-    // Check role
     if (!roles.includes(userRole)) {
       return res.status(403).json({
         success: false,

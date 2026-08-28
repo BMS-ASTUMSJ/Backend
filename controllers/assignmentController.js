@@ -2,14 +2,10 @@ const mongoose = require("mongoose");
 const path = require("path");
 const fs = require("fs");
 
-const Assignment = require("../models/Assignment");
+const Assignment = require("../models/assignment");
 const Batch = require("../models/batch");
 const User = require("../models/user");
 const Team = require("../models/team");
-
-// ======================================================
-// DELETE LOCAL FILE
-// ======================================================
 
 const deleteLocalFile = (fileUrl) => {
   if (!fileUrl) return;
@@ -33,10 +29,6 @@ const deleteLocalFile = (fileUrl) => {
   }
 };
 
-// ======================================================
-// DELETE NEWLY UPLOADED FILES ON ERROR
-// ======================================================
-
 const deleteUploadedFiles = (files = []) => {
   if (!Array.isArray(files)) return;
 
@@ -51,10 +43,6 @@ const deleteUploadedFiles = (files = []) => {
   });
 };
 
-// ======================================================
-// FORMAT FILES FOR DATABASE
-// ======================================================
-
 const formatUploadedFiles = (files = []) => {
   if (!Array.isArray(files)) return [];
 
@@ -67,16 +55,11 @@ const formatUploadedFiles = (files = []) => {
   }));
 };
 
-// ======================================================
-// GET ACTIVE BATCH
-// ======================================================
-
 const getActiveBatch = async () => {
   let batch = await Batch.findOne({
     status: "active",
   });
 
-  // Fallback if your batch system uses registration status
   if (!batch) {
     batch = await Batch.findOne({
       isRegistrationOpen: true,
@@ -86,19 +69,11 @@ const getActiveBatch = async () => {
   return batch;
 };
 
-// ======================================================
-// GET USER
-// ======================================================
-
 const getUserWithBatch = async (userId) => {
   return User.findById(userId)
     .select("_id role batch batchHistory firstName lastName email")
     .lean();
 };
-
-// ======================================================
-// GET ACCESSIBLE BATCH IDS
-// ======================================================
 
 const getUserAccessibleBatchIds = async (userId) => {
   const user = await getUserWithBatch(userId);
@@ -108,13 +83,10 @@ const getUserAccessibleBatchIds = async (userId) => {
   }
 
   const batchIds = new Set();
-
-  // Current batch
   if (user.batch) {
     batchIds.add(user.batch.toString());
   }
 
-  // Batch history
   if (Array.isArray(user.batchHistory)) {
     user.batchHistory.forEach((history) => {
       if (history?.batch) {
@@ -127,7 +99,6 @@ const getUserAccessibleBatchIds = async (userId) => {
     });
   }
 
-  // Mentor teams
   if (user.role === "mentor") {
     const teams = await Team.find({
       mentors: userId,
@@ -144,10 +115,6 @@ const getUserAccessibleBatchIds = async (userId) => {
 
   return [...batchIds];
 };
-
-// ======================================================
-// GET CURRENT BATCH
-// ======================================================
 
 const getUserCurrentBatchId = async (userId) => {
   const user = await getUserWithBatch(userId);
@@ -176,10 +143,6 @@ const getUserCurrentBatchId = async (userId) => {
   return null;
 };
 
-// ======================================================
-// CREATE ASSIGNMENT
-// ======================================================
-
 const createAssignment = async (req, res) => {
   try {
     console.log("CREATE ASSIGNMENT BODY:", req.body);
@@ -196,10 +159,6 @@ const createAssignment = async (req, res) => {
       maxScore = 100,
       link = "",
     } = req.body;
-
-    // --------------------------------------------------
-    // VALIDATION
-    // --------------------------------------------------
 
     if (!title || !String(title).trim()) {
       deleteUploadedFiles(req.files);
@@ -258,8 +217,6 @@ const createAssignment = async (req, res) => {
         message: "Maximum score must be greater than 0.",
       });
     }
-
-    // --------------------------------------------------
     // ACTIVE BATCH
     // --------------------------------------------------
 
@@ -275,15 +232,7 @@ const createAssignment = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // FILES
-    // --------------------------------------------------
-
     const uploadedFiles = formatUploadedFiles(req.files || []);
-
-    // --------------------------------------------------
-    // CREATE ASSIGNMENT
-    // --------------------------------------------------
 
     const assignment = await Assignment.create({
       title: String(title).trim(),
@@ -319,10 +268,6 @@ const createAssignment = async (req, res) => {
   }
 };
 
-// ======================================================
-// GET ASSIGNMENTS
-// ======================================================
-
 const getAssignments = async (req, res) => {
   try {
     if (!req.user) {
@@ -343,7 +288,6 @@ const getAssignments = async (req, res) => {
 
     const role = String(user.role || "").toLowerCase();
 
-    // ADMIN SEES ALL ASSIGNMENTS
     if (role === "admin") {
       const assignments = await Assignment.find({})
         .populate("batch", "name status startDate endDate")
@@ -357,7 +301,6 @@ const getAssignments = async (req, res) => {
       });
     }
 
-    // STUDENT / MENTOR
     if (!["student", "mentor"].includes(role)) {
       return res.status(403).json({
         success: false,
@@ -403,10 +346,6 @@ const getAssignments = async (req, res) => {
     });
   }
 };
-
-// ======================================================
-// GET SINGLE ASSIGNMENT
-// ======================================================
 
 const getAssignment = async (req, res) => {
   try {
@@ -475,10 +414,6 @@ const getAssignment = async (req, res) => {
   }
 };
 
-// ======================================================
-// GET ASSIGNMENT HISTORY
-// ======================================================
-
 const getAssignmentHistory = async (req, res) => {
   try {
     const user = await getUserWithBatch(req.user._id);
@@ -544,10 +479,6 @@ const getAssignmentHistory = async (req, res) => {
   }
 };
 
-// ======================================================
-// UPDATE ASSIGNMENT
-// ======================================================
-
 const updateAssignment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -582,7 +513,6 @@ const updateAssignment = async (req, res) => {
       });
     }
 
-    // Title
     if (title !== undefined) {
       if (!String(title).trim()) {
         deleteUploadedFiles(req.files);
@@ -596,7 +526,6 @@ const updateAssignment = async (req, res) => {
       assignment.title = String(title).trim();
     }
 
-    // Description
     if (description !== undefined) {
       if (!String(description).trim()) {
         deleteUploadedFiles(req.files);
@@ -610,7 +539,6 @@ const updateAssignment = async (req, res) => {
       assignment.description = String(description).trim();
     }
 
-    // Instructor
     if (instructorName !== undefined) {
       if (!String(instructorName).trim()) {
         deleteUploadedFiles(req.files);
@@ -624,7 +552,6 @@ const updateAssignment = async (req, res) => {
       assignment.instructorName = String(instructorName).trim();
     }
 
-    // Deadline
     if (deadline !== undefined && deadline !== "") {
       const parsedDeadline = new Date(deadline);
 
@@ -640,7 +567,6 @@ const updateAssignment = async (req, res) => {
       assignment.deadline = parsedDeadline;
     }
 
-    // Max score
     if (maxScore !== undefined && maxScore !== "") {
       const score = Number(maxScore);
 
@@ -656,18 +582,15 @@ const updateAssignment = async (req, res) => {
       assignment.maxScore = score;
     }
 
-    // Link
     if (link !== undefined) {
       assignment.link = link ? String(link).trim() : "";
     }
 
-    // Files
     const newFiles = formatUploadedFiles(req.files || []);
 
     const shouldReplaceFiles = replaceFiles === true || replaceFiles === "true";
 
     if (shouldReplaceFiles) {
-      // Delete old physical files
       if (Array.isArray(assignment.files)) {
         assignment.files.forEach((file) => {
           deleteLocalFile(file.fileUrl);
@@ -702,10 +625,6 @@ const updateAssignment = async (req, res) => {
   }
 };
 
-// ======================================================
-// DELETE ASSIGNMENT
-// ======================================================
-
 const deleteAssignment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -726,7 +645,6 @@ const deleteAssignment = async (req, res) => {
       });
     }
 
-    // Delete physical files
     if (Array.isArray(assignment.files)) {
       assignment.files.forEach((file) => {
         deleteLocalFile(file.fileUrl);

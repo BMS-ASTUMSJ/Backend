@@ -12,21 +12,9 @@ const {
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
-// ======================================================
-// STUDENT SUBMITS
-// ======================================================
-
 router.post("/", protect, authorize("student"), submitMentorAssignment);
 
-// ======================================================
-// STUDENT SEES OWN SUBMISSIONS
-// ======================================================
-
 router.get("/my", protect, authorize("student"), getMyMentorSubmissions);
-
-// ======================================================
-// MENTOR SEES SUBMISSIONS
-// ======================================================
 
 router.get(
   "/assignment/:assignmentId",
@@ -34,10 +22,6 @@ router.get(
   authorize("mentor"),
   getMentorAssignmentSubmissions,
 );
-
-// ======================================================
-// MENTOR GIVES FEEDBACK
-// ======================================================
 
 router.put("/feedback/:id", protect, authorize("mentor"), giveMentorFeedback);
 

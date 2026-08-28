@@ -6,10 +6,6 @@ const User = require("../models/user");
 const Batch = require("../models/batch");
 const Team = require("../models/team");
 
-// ======================================================
-// CONSTANTS
-// ======================================================
-
 const TOPICS = [
   "HTML / CSS",
   "JavaScript",
@@ -21,10 +17,6 @@ const TOPICS = [
 ];
 
 const STATUSES = ["not_started", "in_progress", "done", "needs_help"];
-
-// ======================================================
-// STATUS NORMALIZER
-// ======================================================
 
 const normalizeStatus = (status) => {
   if (!status) return null;
@@ -70,10 +62,6 @@ const displayStatus = (status) => {
   return statusMap[normalized] || status || "Not Started";
 };
 
-// ======================================================
-// OBJECT ID
-// ======================================================
-
 const validateObjectId = (id, name) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) {
     throw new Error(`Invalid ${name}`);
@@ -81,28 +69,6 @@ const validateObjectId = (id, name) => {
 
   return new mongoose.Types.ObjectId(id);
 };
-
-// ======================================================
-// COMPLETION
-// ======================================================
-
-const isCompleted = (progress) => {
-  if (!progress) return false;
-
-  const status = normalizeStatus(progress.status);
-
-  return Boolean(
-    status === "done" ||
-    progress.completedAt ||
-    progress.watched ||
-    progress.submissionLink,
-  );
-};
-
-// ======================================================
-// STUDENT BATCH IDS
-// ======================================================
-
 const getStudentBatchIds = async (studentId) => {
   const student = await User.findById(studentId).select("batch batchHistory");
 
@@ -125,10 +91,6 @@ const getStudentBatchIds = async (studentId) => {
   return batchIds;
 };
 
-// ======================================================
-// SELECTED STUDENT BATCH
-// ======================================================
-
 const getSelectedStudentBatch = async (studentId, batchId) => {
   const batches = await getStudentBatchIds(studentId);
 
@@ -145,9 +107,18 @@ const getSelectedStudentBatch = async (studentId, batchId) => {
   return selectedBatch;
 };
 
-// ======================================================
-// CREATE CONTENT
-// ======================================================
+const isCompleted = (progress) => {
+  if (!progress) return false;
+
+  const status = normalizeStatus(progress.status);
+
+  return Boolean(
+    status === "done" ||
+    progress.completedAt ||
+    progress.watched ||
+    progress.submissionLink,
+  );
+};
 
 const createProgressContent = async (data) => {
   const { batch, batchId, type, topic, week, title, link, publishedBy } = data;
@@ -200,10 +171,6 @@ const createProgressContent = async (data) => {
   });
 };
 
-// ======================================================
-// GET CONTENT
-// ======================================================
-
 const getProgressContent = async (type, week, batchId, topic) => {
   const filter = {
     isPublished: true,
@@ -235,10 +202,6 @@ const getProgressContent = async (type, week, batchId, topic) => {
     });
 };
 
-// ======================================================
-// GET CONTENT BY ID
-// ======================================================
-
 const getContentById = async (contentId) => {
   validateObjectId(contentId, "content ID");
 
@@ -252,10 +215,6 @@ const getContentById = async (contentId) => {
 
   return content;
 };
-
-// ======================================================
-// GET STUDENT PROGRESS
-// ======================================================
 
 const getStudentProgress = async (studentId, type, week, batchId, topic) => {
   const selectedBatch = await getSelectedStudentBatch(studentId, batchId);
@@ -340,10 +299,6 @@ const getStudentProgress = async (studentId, type, week, batchId, topic) => {
     };
   });
 };
-
-// ======================================================
-// UPDATE STUDENT PROGRESS
-// ======================================================
 
 const updateStudentProgress = async (studentId, contentId, data) => {
   validateObjectId(studentId, "student ID");
@@ -500,10 +455,6 @@ const updateStudentProgress = async (studentId, contentId, data) => {
 
 const updateStudentOwnProgress = updateStudentProgress;
 
-// ======================================================
-// STUDENT SUMMARY
-// ======================================================
-
 const getStudentSummary = async (studentId, type, week, batchId, topic) => {
   const progressList = await getStudentProgress(
     studentId,
@@ -535,20 +486,14 @@ const getStudentSummary = async (studentId, type, week, batchId, topic) => {
 
   const total = progressList.length;
 
-  const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
-
   return {
     total,
     completed,
     needsHelp,
     inProgress,
-    completion,
+    completion: total ? Math.round((completed / total) * 100) : 0,
   };
 };
-
-// ======================================================
-// STUDENT RANK
-// ======================================================
 
 const getStudentRank = async (studentId, type, week, batchId, topic) => {
   const selectedBatch = await getSelectedStudentBatch(studentId, batchId);
@@ -589,10 +534,6 @@ const getStudentRank = async (studentId, type, week, batchId, topic) => {
     totalStudents: rankings.length,
   };
 };
-
-// ======================================================
-// STUDENT DASHBOARD
-// ======================================================
 
 const getProgressDashboard = async (studentId, batchId) => {
   const student = await User.findById(studentId).select(
@@ -646,10 +587,6 @@ const getProgressDashboard = async (studentId, batchId) => {
 
 const getStudentDashboard = getProgressDashboard;
 
-// ======================================================
-// MENTOR TEAMS
-// ======================================================
-
 const getMentorTeams = async (mentorId, batchId) => {
   const filter = {
     mentors: mentorId,
@@ -661,10 +598,6 @@ const getMentorTeams = async (mentorId, batchId) => {
 
   return Team.find(filter).select("_id name gender batch mentors students");
 };
-
-// ======================================================
-// MENTOR STUDENTS
-// ======================================================
 
 const getMentorStudents = async (mentorId, batchId) => {
   const teams = await getMentorTeams(mentorId, batchId);
@@ -690,7 +623,6 @@ const getMentorStudents = async (mentorId, batchId) => {
       $in: studentIds,
     },
     role: "student",
-
     ...(batchId
       ? {
           batch: batchId,
@@ -698,10 +630,6 @@ const getMentorStudents = async (mentorId, batchId) => {
       : {}),
   }).select("firstName lastName email gender batch");
 };
-
-// ======================================================
-// MENTOR PROGRESS
-// ======================================================
 
 const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
   validateObjectId(mentorId, "mentor ID");
@@ -774,44 +702,32 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
       topic,
     );
 
-    // ====================================================
-    // CALCULATE ACTUAL STATUS COUNTS
-    // ====================================================
-
-    let completed = 0;
-    let inProgress = 0;
-    let needsHelp = 0;
-    let notStarted = 0;
+    /*
+     * Collect actual progress statuses.
+     */
+    const statusCounts = {
+      completed: 0,
+      inProgress: 0,
+      needsHelp: 0,
+      notStarted: 0,
+    };
 
     for (const item of items) {
       const status = normalizeStatus(item.progress?.status);
 
       if (status === "done" || isCompleted(item.progress)) {
-        completed++;
+        statusCounts.completed++;
       } else if (status === "in_progress") {
-        inProgress++;
+        statusCounts.inProgress++;
       } else if (status === "needs_help") {
-        needsHelp++;
+        statusCounts.needsHelp++;
       } else {
-        notStarted++;
+        statusCounts.notStarted++;
       }
     }
 
-    // ====================================================
-    // ACTUAL TOTAL
-    // ====================================================
-
-    const total = items.length;
-
-    // ====================================================
-    // ACTUAL COMPLETION
-    // ====================================================
-
-    const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-    // ====================================================
-    // NOTES
-    // ====================================================
+    const atRisk =
+      overall.completion < 50 || cp.needsHelp > 0 || dev.needsHelp > 0;
 
     const notes = items
       .filter((item) => item.progress?.mentorNote || item.progress?.note)
@@ -835,110 +751,68 @@ const getMentorProgress = async (mentorId, type, week, batchId, topic) => {
         updatedAt: item.progress?.updatedAt || null,
       }));
 
-    const atRisk = completion < 50 || needsHelp > 0;
-
     result.push({
-      // ==================================================
-      // STUDENT
-      // ==================================================
-
       student: {
-        id: student._id,
         _id: student._id,
-        name: `${student.firstName} ${student.lastName}`,
+        id: student._id,
         firstName: student.firstName,
         lastName: student.lastName,
+        name: `${student.firstName} ${student.lastName}`,
         email: student.email,
         gender: student.gender,
         batch: student.batch,
       },
 
-      // ==================================================
-      // CP
-      // ==================================================
-
       cp,
-
-      // ==================================================
-      // DEV
-      // ==================================================
-
       dev,
-
-      // ==================================================
-      // OVERALL
-      // ==================================================
-
       overall,
 
-      // ==================================================
-      // IMPORTANT TOP-LEVEL VALUES
-      // FRONTEND USES THESE
-      // ==================================================
+      completed: statusCounts.completed,
 
-      total,
+      total: items.length,
 
-      completed,
+      completion: items.length
+        ? Math.round((statusCounts.completed / items.length) * 100)
+        : 0,
 
-      inProgress,
+      inProgress: statusCounts.inProgress,
 
-      needsHelp,
+      needsHelp: statusCounts.needsHelp,
 
-      notStarted,
-
-      completion,
-
-      // ==================================================
-      // PROGRESS OBJECT
-      // ==================================================
+      notStarted: statusCounts.notStarted,
 
       progress: {
-        total,
+        total: items.length,
 
-        completed,
+        completed: statusCounts.completed,
 
-        inProgress,
+        inProgress: statusCounts.inProgress,
 
-        needsHelp,
+        needsHelp: statusCounts.needsHelp,
 
-        notStarted,
+        notStarted: statusCounts.notStarted,
 
-        completion,
+        completion: items.length
+          ? Math.round((statusCounts.completed / items.length) * 100)
+          : 0,
       },
-
-      // ==================================================
-      // ITEMS
-      // ==================================================
-
       items,
 
-      // ==================================================
-      // NOTES
-      // ==================================================
-
       notes,
-
-      // ==================================================
-      // RISK
-      // ==================================================
 
       atRisk,
 
       riskReason:
-        completion < 50
+        overall.completion < 50
           ? "Progress is below 50%"
-          : needsHelp > 0
+          : cp.needsHelp > 0 || dev.needsHelp > 0
             ? "Student needs help"
             : null,
     });
   }
 
-  return result.sort((a, b) => b.completion - a.completion);
+  return result.sort((a, b) => b.overall.completion - a.overall.completion);
 };
-
-// ======================================================
-// FALLING BEHIND
-// ======================================================
 
 const getFallingBehindStudents = async (
   mentorId,
@@ -960,17 +834,12 @@ const getFallingBehindStudents = async (
 
   return students.filter(
     (student) =>
-      student.completion < minimum ||
+      student.overall.completion < minimum ||
       student.needsHelp > 0 ||
       student.cp.needsHelp > 0 ||
       student.dev.needsHelp > 0,
   );
 };
-
-// ======================================================
-// ADMIN OVERALL PROGRESS
-// ======================================================
-
 const getOverallProgress = async (type, week, batchId, topic) => {
   if (!batchId) {
     throw new Error("Batch ID is required");
@@ -1005,10 +874,6 @@ const getOverallProgress = async (type, week, batchId, topic) => {
   );
 };
 
-// ======================================================
-// UNPUBLISH
-// ======================================================
-
 const unpublishProgressContent = async (contentId) => {
   validateObjectId(contentId, "content ID");
 
@@ -1028,10 +893,6 @@ const unpublishProgressContent = async (contentId) => {
 
   return content;
 };
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   createProgressContent,

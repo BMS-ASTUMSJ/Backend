@@ -23,52 +23,17 @@ const authorize = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// ============================================================
-// CREATE USER
-// ADMIN ONLY
-// ============================================================
-
 router.post("/", protect, authorize("admin"), createUser);
-
-// ============================================================
-// DELETE USER
-// ADMIN ONLY
-// ============================================================
 
 router.delete("/:id", protect, authorize("admin"), deleteUser);
 
-// ============================================================
-// GET MENTORS
-// ADMIN ONLY
-// ============================================================
-
 router.get("/mentors", protect, authorize("admin"), getMentors);
-
-// ============================================================
-// GET STUDENTS
-// ADMIN ONLY
-// ============================================================
 
 router.get("/students", protect, authorize("admin"), getStudents);
 
-// ============================================================
-// GET MY STUDENTS
-// MENTOR ONLY
-// ============================================================
-
 router.get("/my-students", protect, authorize("mentor"), getMyStudents);
 
-// ============================================================
-// GET MY AT-RISK STATUS
-// STUDENT ONLY
-// ============================================================
-
 router.get("/my-risk-status", protect, authorize("student"), getMyRiskStatus);
-
-// ============================================================
-// GET STUDENT DASHBOARD
-// STUDENT ONLY
-// ============================================================
 
 router.get(
   "/student-dashboard",
@@ -77,17 +42,7 @@ router.get(
   getStudentDashboard,
 );
 
-// ============================================================
-// GET ALL AT-RISK STUDENTS
-// ADMIN ONLY
-// ============================================================
-
 router.get("/at-risk", protect, authorize("admin"), getAtRiskStudents);
-
-// ============================================================
-// UPDATE STUDENT AT-RISK STATUS
-// ADMIN ONLY
-// ============================================================
 
 router.patch(
   "/:id/risk-status",
@@ -96,43 +51,15 @@ router.patch(
   updateStudentRiskStatus,
 );
 
-// ============================================================
-// ASSIGN MENTOR
-// ADMIN ONLY
-// ============================================================
-
 router.patch("/assign-mentor", protect, authorize("admin"), assignMentor);
-
-// ============================================================
-// CHANGE USER BATCH / ROLE
-// ADMIN ONLY
-// ============================================================
 
 router.patch("/:id/batch", protect, authorize("admin"), changeUserBatch);
 
-// ============================================================
-// UPDATE USER STATUS
-// ADMIN ONLY
-// ============================================================
-
 router.patch("/:id/status", protect, authorize("admin"), updateUserStatus);
-
-// ============================================================
-// BLACKLIST / SUSPENDED USERS
-// ADMIN ONLY
-// ============================================================
 
 router.get("/blacklist", protect, authorize("admin"), getBlacklistedUsers);
 
-// ============================================================
-// CURRENT USER PROFILE
-// ============================================================
-
 router.get("/profile", protect, getProfile);
-
-// ============================================================
-// UPDATE CURRENT USER PROFILE
-// ============================================================
 
 router.patch("/profile", protect, updateProfile);
 

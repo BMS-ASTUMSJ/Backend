@@ -12,17 +12,9 @@ const authorize = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// ============================================================
-// MENTOR
-// ============================================================
-
 router.get("/my", protect, authorize("mentor"), getMyBatchHistory);
 
 router.get("/my/:batchId", protect, authorize("mentor"), getMyBatch);
-
-// ============================================================
-// ADMIN
-// ============================================================
 
 router.get(
   "/admin/batches",
